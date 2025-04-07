@@ -20,6 +20,10 @@ import ChatPage from './pages/chat/ChatPage';
 import ChatDetails from './pages/chat/ChatDetails';
 import DataSourceConfig from './pages/DataSourceConfig';
 
+// Auth components
+import Login from './pages/auth/Login';
+import Signup from './pages/auth/Signup';
+
 function LandingPage() {
   useEffect(() => {
     // Add dark mode class to html element
@@ -54,6 +58,10 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        
+        {/* Auth routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
         
         {/* Chat routes */}
         <Route path="/chat" element={<ChatLayout />}>
