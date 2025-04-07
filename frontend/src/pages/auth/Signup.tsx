@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import authService from '../../services/authService';
@@ -13,6 +13,13 @@ const Signup = () => {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Check if user is already logged in on component mount
+  useEffect(() => {
+    if (authService.isAuthenticated()) {
+      navigate('/chat');
+    }
+  }, [navigate]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -38,7 +45,7 @@ const Signup = () => {
         email: formData.email,
         password: formData.password,
       });
-      navigate('/login');
+      navigate('/chat');
     } catch (err: any) {
       setError(err.response?.data?.message || 'An error occurred during signup');
     } finally {

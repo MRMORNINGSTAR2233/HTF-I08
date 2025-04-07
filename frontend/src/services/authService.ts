@@ -5,13 +5,23 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const authService = {
   async login(username: string, password: string) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/login`, {
-        username,
-        password,
+      const formData = new URLSearchParams();
+      formData.append('grant_type', 'password');
+      formData.append('username', username);
+      formData.append('password', password);
+      formData.append('scope', '');
+      formData.append('client_id', 'string');
+      formData.append('client_secret', 'string');
+
+      const response = await axios.post(`${API_BASE_URL}/login`, formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }
       });
       
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
+      if (response.data.token || response.data.access_token) {
+        const token = response.data.token || response.data.access_token;
+        localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
       }
       
@@ -21,9 +31,13 @@ const authService = {
     }
   },
 
-  async signup(userData: any) {
+  async signup(userData: { email: string, username: string, password: string }) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/signup`, userData);
+      const response = await axios.post(`${API_BASE_URL}/users/`, userData, {
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
       return response.data;
     } catch (error) {
       throw error;

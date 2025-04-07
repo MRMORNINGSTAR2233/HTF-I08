@@ -1,6 +1,7 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 import './index.css';
+import authService from './services/authService';
 
 // Landing page components
 import Navbar from './components/layout/Navbar';
@@ -23,6 +24,15 @@ import DataSourceConfig from './pages/DataSourceConfig';
 // Auth components
 import Login from './pages/auth/Login';
 import Signup from './pages/auth/Signup';
+
+// Function to create protected routes that check authentication
+const ProtectedRoute = () => {
+  const isAuthenticated = authService.isAuthenticated();
+  
+  // If authenticated, render the child routes
+  // If not, redirect to the login page
+  return isAuthenticated ? <Outlet /> : <Navigate to="/login" />;
+};
 
 function LandingPage() {
   useEffect(() => {
@@ -63,11 +73,13 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         
-        {/* Chat routes */}
-        <Route path="/chat" element={<ChatLayout />}>
-          <Route index element={<ChatPage />} />
-          <Route path="config" element={<DataSourceConfig />} />
-          <Route path=":chatId" element={<ChatDetails />} />
+        {/* Protected Chat routes */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/chat" element={<ChatLayout />}>
+            <Route index element={<ChatPage />} />
+            <Route path="config" element={<DataSourceConfig />} />
+            <Route path=":chatId" element={<ChatDetails />} />
+          </Route>
         </Route>
 
         {/* Fallback route */}
