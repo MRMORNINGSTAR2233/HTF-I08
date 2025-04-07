@@ -35,23 +35,12 @@ import { Outlet } from "react-router-dom";
 import { Input } from "../../components/ui/input";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 
-// Sample recent chats data
-const recentChats = [
-  {
-    id: 1,
-    title: "Project Brainstorming",
-    lastMessage: "2h ago",
-    unread: true,
-  },
-  {
-    id: 2,
-    title: "Marketing Strategy",
-    lastMessage: "Yesterday",
-    unread: false,
-  },
-  { id: 3, title: "Design Review", lastMessage: "3d ago", unread: false },
-  { id: 4, title: "Weekly Update", lastMessage: "1w ago", unread: false },
-];
+interface RecentChat {
+  id: string | number;
+  title: string;
+  lastMessage: string;
+  unread: boolean;
+}
 
 export function ModernSidebar() {
   return (
@@ -66,8 +55,29 @@ export function ModernSidebar() {
 
 function SidebarContents() {
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [recentChats, setRecentChats] = React.useState<RecentChat[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { collapsed, setCollapsed } = useSidebar();
+
+  // Load recent chats from localStorage on component mount
+  React.useEffect(() => {
+    const storedRecentChats = localStorage.getItem('recentChats');
+    if (storedRecentChats) {
+      try {
+        const parsedChats = JSON.parse(storedRecentChats);
+        // Transform the data to match the expected format
+        const formattedChats = parsedChats.map((chat: any) => ({
+          id: chat.id,
+          title: chat.title,
+          lastMessage: chat.createdAt ? new Date(chat.createdAt).toLocaleDateString() : 'New',
+          unread: false
+        }));
+        setRecentChats(formattedChats);
+      } catch (e) {
+        console.error('Error parsing stored recent chats:', e);
+      }
+    }
+  }, []);
 
   const handleFileUpload = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent sidebar toggle
@@ -159,7 +169,10 @@ function SidebarContents() {
               <SidebarMenuButton
                 tooltip="New Chat"
                 className={`flex ${collapsed ? "justify-center" : "justify-start"} items-center bg-gradient-to-r rounded-lg cursor-pointer gap-2 w-full ${collapsed ? "p-2.5" : "py-2.5 px-3"} from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white hover:text-white shadow-md shadow-violet-900/20 hover:shadow-lg hover:shadow-violet-900/30 transition-all duration-200 pointer-events-auto relative z-20`}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.location.href = "/chat/config";
+                }}
               >
                 <MessageSquarePlus className="size-5 text-white flex-shrink-0" />
                 {!collapsed && (

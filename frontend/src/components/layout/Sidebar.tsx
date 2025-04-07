@@ -1,10 +1,31 @@
 import { useState, useRef, MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, MessageSquare, FileUp, Activity } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, MessageSquare, Database, FileText, Activity, X, Edit, Check } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { cn } from '../../lib/utils';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+
+interface DataSourceConfig {
+  type: 'csv' | 'database';
+  name: string;
+  details: CsvConfig | DbConfig;
+}
+
+interface CsvConfig {
+  filename: string;
+}
+
+interface DbConfig {
+  dbType: 'mysql' | 'postgres';
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+  database: string;
+}
 
 interface SidebarProps {
   collapsed: boolean;
@@ -12,10 +33,28 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
+  // Data source selection and configuration states
+  const [showDataSourceSelection, setShowDataSourceSelection] = useState(false);
+  const [selectedDataSource, setSelectedDataSource] = useState<'csv' | 'database' | null>(null);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvFileName, setCsvFileName] = useState('');
+  const [configName, setConfigName] = useState('');
+  const [dbConfig, setDbConfig] = useState<Partial<DbConfig>>({
+    dbType: 'mysql',
+    host: '',
+    port: '',
+    username: '',
+    password: '',
+    database: ''
+  });
+  const [dataSources, setDataSources] = useState<DataSourceConfig[]>([]);
+  const [editingSource, setEditingSource] = useState<string | null>(null);
+
+  // Recent chats state
   const [recentChats, setRecentChats] = useState([
-    { id: '1', title: 'Data Visualization Project' },
-    { id: '2', title: 'Marketing Analytics' },
-    { id: '3', title: 'Sales Dashboard' }
+    { id: '1', title: 'Data Visualization Project', dataSourceName: 'Sales Data' },
+    { id: '2', title: 'Marketing Analytics', dataSourceName: 'Customer DB' },
+    { id: '3', title: 'Sales Dashboard', dataSourceName: 'Q4 Data' }
   ]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,9 +63,130 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
     setCollapsed(!collapsed);
   };
   
+  // File upload handlers
   const handleFileUpload = (e: MouseEvent) => {
     e.stopPropagation(); // Prevent sidebar toggle
     fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      setCsvFile(files[0]);
+      setCsvFileName(files[0].name);
+    }
+  };
+
+  // Handler for new chat button
+  const handleNewChat = (e: MouseEvent) => {
+    e.stopPropagation();
+    // Navigate to the configuration page
+    window.location.href = "/chat/config";
+  };
+
+  // Handler for selecting data source type
+  const handleDataSourceSelect = (type: 'csv' | 'database') => {
+    setSelectedDataSource(type);
+  };
+
+  // Handler for CSV form submission
+  const handleCsvSubmit = () => {
+    if (csvFile && configName) {
+      const newDataSource: DataSourceConfig = {
+        type: 'csv',
+        name: configName,
+        details: {
+          filename: csvFileName
+        }
+      };
+      setDataSources([...dataSources, newDataSource]);
+      
+      // Reset form
+      setCsvFile(null);
+      setCsvFileName('');
+      setConfigName('');
+      setSelectedDataSource(null);
+      setShowDataSourceSelection(false);
+      
+      // In a real app, you would send the file to the backend here
+      // and create a new chat with this data source
+      
+      // Navigate to chat with this data source
+      window.location.href = `/chat?dataSource=${encodeURIComponent(configName)}`;
+    }
+  };
+
+  // Handler for database form submission
+  const handleDbSubmit = () => {
+    if (configName && 
+        dbConfig.dbType && 
+        dbConfig.host && 
+        dbConfig.port && 
+        dbConfig.username && 
+        dbConfig.password && 
+        dbConfig.database) {
+      
+      const newDataSource: DataSourceConfig = {
+        type: 'database',
+        name: configName,
+        details: dbConfig as DbConfig
+      };
+      
+      setDataSources([...dataSources, newDataSource]);
+      
+      // Reset form
+      setConfigName('');
+      setDbConfig({
+        dbType: 'mysql',
+        host: '',
+        port: '',
+        username: '',
+        password: '',
+        database: ''
+      });
+      setSelectedDataSource(null);
+      setShowDataSourceSelection(false);
+      
+      // Navigate to chat with this data source
+      window.location.href = `/chat?dataSource=${encodeURIComponent(configName)}`;
+    }
+  };
+
+  // Handle editing a data source
+  const handleEditSource = (name: string) => {
+    setEditingSource(name);
+    const source = dataSources.find(ds => ds.name === name);
+    
+    if (source) {
+      setConfigName(source.name);
+      setSelectedDataSource(source.type);
+      
+      if (source.type === 'csv') {
+        const csvDetails = source.details as CsvConfig;
+        setCsvFileName(csvDetails.filename);
+      } else if (source.type === 'database') {
+        const dbDetails = source.details as DbConfig;
+        setDbConfig(dbDetails);
+      }
+    }
+  };
+
+  // Handle canceling edit or new data source
+  const handleCancel = () => {
+    setSelectedDataSource(null);
+    setShowDataSourceSelection(false);
+    setEditingSource(null);
+    setConfigName('');
+    setCsvFile(null);
+    setCsvFileName('');
+    setDbConfig({
+      dbType: 'mysql',
+      host: '',
+      port: '',
+      username: '',
+      password: '',
+      database: ''
+    });
   };
 
   return (
@@ -77,33 +237,6 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         
         <Separator className="bg-white/5" />
         
-        {/* File Upload Section */}
-        <div className={cn(
-          "p-4 relative z-10",
-          collapsed && "flex justify-center"
-        )}>
-          <Button
-            variant="outline"
-            className={cn(
-              "bg-zinc-800/70 hover:bg-zinc-700/80 border-zinc-700/30 text-white transition-all duration-200",
-              collapsed ? "w-8 h-8 p-0 rounded-full" : "w-full justify-start gap-2"
-            )}
-            onClick={handleFileUpload}
-          >
-            <FileUp size={collapsed ? 16 : 18} className="flex-shrink-0" />
-            {!collapsed && <span>Upload Files</span>}
-          </Button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => e.stopPropagation()}
-          />
-        </div>
-        
-        <Separator className="bg-white/5" />
-        
         {/* New Chat Button */}
         <div className={cn(
           "p-4 relative z-10",
@@ -115,7 +248,7 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-md shadow-violet-900/20 hover:shadow-lg hover:shadow-violet-900/30 border-none transition-all duration-200",
               collapsed ? "w-8 h-8 p-0 rounded-full" : "w-full justify-start gap-2"
             )}
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleNewChat}
           >
             <Plus size={collapsed ? 16 : 18} className="flex-shrink-0" />
             {!collapsed && <span>New Chat</span>}
@@ -125,8 +258,293 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       
       {/* Middle Section - Flexible */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Recent Chats - Only show when not collapsed */}
-        {!collapsed ? (
+        {/* Data Source Selection Modal */}
+        {!collapsed && showDataSourceSelection && !selectedDataSource && (
+          <div className="p-4 relative z-10 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-zinc-800/70 rounded-lg p-4 border border-white/10">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-semibold text-white">Select Data Source</h3>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 rounded-full"
+                  onClick={handleCancel}
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  className="flex flex-col items-center justify-center h-24 bg-zinc-900/70 hover:bg-zinc-700/70 border-zinc-700/50"
+                  onClick={() => handleDataSourceSelect('csv')}
+                >
+                  <FileText size={24} className="mb-2 text-violet-400" />
+                  <span>CSV File</span>
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  className="flex flex-col items-center justify-center h-24 bg-zinc-900/70 hover:bg-zinc-700/70 border-zinc-700/50"
+                  onClick={() => handleDataSourceSelect('database')}
+                >
+                  <Database size={24} className="mb-2 text-indigo-400" />
+                  <span>Database</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* CSV Upload Form */}
+        {!collapsed && selectedDataSource === 'csv' && (
+          <div className="p-4 relative z-10 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-zinc-800/70 rounded-lg p-4 border border-white/10">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-semibold text-white">
+                  {editingSource ? 'Edit CSV Config' : 'Import CSV File'}
+                </h3>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 rounded-full"
+                  onClick={handleCancel}
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="config-name" className="text-xs text-zinc-400">Config Name</Label>
+                  <Input 
+                    id="config-name"
+                    value={configName}
+                    onChange={(e) => setConfigName(e.target.value)}
+                    className="bg-zinc-900/70 border-zinc-700/50 text-white"
+                    placeholder="E.g. Sales Data 2023"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="csv-file" className="text-xs text-zinc-400">CSV File</Label>
+                  <div className="flex gap-2">
+                    <Input 
+                      id="csv-file"
+                      readOnly
+                      value={csvFileName}
+                      className="bg-zinc-900/70 border-zinc-700/50 text-white flex-1"
+                      placeholder="Select a CSV file..."
+                    />
+                    <Button
+                      variant="outline"
+                      className="bg-zinc-900/70 hover:bg-zinc-700/70 border-zinc-700/50"
+                      onClick={handleFileUpload}
+                    >
+                      Browse
+                    </Button>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept=".csv"
+                      onChange={handleFileChange}
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-2 mt-4">
+                  <Button
+                    variant="ghost"
+                    className="bg-zinc-900/70 hover:bg-zinc-700/70"
+                    onClick={handleCancel}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    className="bg-gradient-to-r from-violet-600 to-indigo-600"
+                    onClick={handleCsvSubmit}
+                    disabled={!csvFileName || !configName}
+                  >
+                    {editingSource ? 'Update' : 'Submit'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Database Config Form */}
+        {!collapsed && selectedDataSource === 'database' && (
+          <div className="p-4 relative z-10 pointer-events-auto overflow-y-auto max-h-[calc(100vh-250px)]" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-zinc-800/70 rounded-lg p-4 border border-white/10">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-semibold text-white">
+                  {editingSource ? 'Edit Database Config' : 'Database Configuration'}
+                </h3>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6 rounded-full"
+                  onClick={handleCancel}
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="db-config-name" className="text-xs text-zinc-400">Config Name</Label>
+                  <Input 
+                    id="db-config-name"
+                    value={configName}
+                    onChange={(e) => setConfigName(e.target.value)}
+                    className="bg-zinc-900/70 border-zinc-700/50 text-white"
+                    placeholder="E.g. Production DB"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="db-type" className="text-xs text-zinc-400">Database Type</Label>
+                  <select
+                    id="db-type"
+                    value={dbConfig.dbType}
+                    onChange={(e) => setDbConfig({...dbConfig, dbType: e.target.value as 'mysql' | 'postgres'})}
+                    className="w-full rounded-md bg-zinc-900/70 border-zinc-700/50 text-white py-2 px-3"
+                  >
+                    <option value="mysql">MySQL</option>
+                    <option value="postgres">PostgreSQL</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <Label htmlFor="db-host" className="text-xs text-zinc-400">Host</Label>
+                  <Input 
+                    id="db-host"
+                    value={dbConfig.host}
+                    onChange={(e) => setDbConfig({...dbConfig, host: e.target.value})}
+                    className="bg-zinc-900/70 border-zinc-700/50 text-white"
+                    placeholder="localhost"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="db-port" className="text-xs text-zinc-400">Port</Label>
+                  <Input 
+                    id="db-port"
+                    value={dbConfig.port}
+                    onChange={(e) => setDbConfig({...dbConfig, port: e.target.value})}
+                    className="bg-zinc-900/70 border-zinc-700/50 text-white"
+                    placeholder="3306"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="db-username" className="text-xs text-zinc-400">Username</Label>
+                  <Input 
+                    id="db-username"
+                    value={dbConfig.username}
+                    onChange={(e) => setDbConfig({...dbConfig, username: e.target.value})}
+                    className="bg-zinc-900/70 border-zinc-700/50 text-white"
+                    placeholder="root"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="db-password" className="text-xs text-zinc-400">Password</Label>
+                  <Input 
+                    id="db-password"
+                    type="password"
+                    value={dbConfig.password}
+                    onChange={(e) => setDbConfig({...dbConfig, password: e.target.value})}
+                    className="bg-zinc-900/70 border-zinc-700/50 text-white"
+                    placeholder="••••••••"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="db-name" className="text-xs text-zinc-400">Database Name</Label>
+                  <Input 
+                    id="db-name"
+                    value={dbConfig.database}
+                    onChange={(e) => setDbConfig({...dbConfig, database: e.target.value})}
+                    className="bg-zinc-900/70 border-zinc-700/50 text-white"
+                    placeholder="mydatabase"
+                  />
+                </div>
+                
+                <div className="flex justify-end space-x-2 mt-4">
+                  <Button
+                    variant="ghost"
+                    className="bg-zinc-900/70 hover:bg-zinc-700/70"
+                    onClick={handleCancel}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    className="bg-gradient-to-r from-violet-600 to-indigo-600"
+                    onClick={handleDbSubmit}
+                    disabled={!configName || !dbConfig.host || !dbConfig.port || !dbConfig.username || !dbConfig.password || !dbConfig.database}
+                  >
+                    {editingSource ? 'Update' : 'Connect'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Data Sources Section */}
+        {!collapsed && dataSources.length > 0 && !showDataSourceSelection && !selectedDataSource && (
+          <>
+            <Separator className="bg-white/5" />
+            
+            <div className="flex-1 overflow-y-auto p-2 relative z-10">
+              <div className="text-xs text-white/50 mb-2 px-2">
+                Data Sources
+              </div>
+              <div className="space-y-1 mb-4">
+                {dataSources.map((source) => (
+                  <div
+                    key={source.name}
+                    className="flex items-center justify-between gap-2 px-2 py-2 rounded-md hover:bg-zinc-800/70 text-sm transition-colors pointer-events-auto"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Navigate to chat with this data source
+                      window.location.href = `/chat?dataSource=${encodeURIComponent(source.name)}`;
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      {source.type === 'csv' ? (
+                        <FileText size={16} className="text-violet-400 shrink-0" />
+                      ) : (
+                        <Database size={16} className="text-indigo-400 shrink-0" />
+                      )}
+                      <span className="truncate text-zinc-200">{source.name}</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-full"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditSource(source.name);
+                      }}
+                    >
+                      <Edit size={12} className="text-zinc-400" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+        
+        {/* Recent Chats - Only show when not collapsed and no forms are active */}
+        {!collapsed && !showDataSourceSelection && !selectedDataSource && (
           <>
             <Separator className="bg-white/5" />
             
@@ -138,18 +556,25 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                 {recentChats.map((chat) => (
                   <Link
                     key={chat.id}
-                    to={`/chat/${chat.id}`}
-                    className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-zinc-800/70 text-sm transition-colors relative z-10 pointer-events-auto"
+                    to={`/chat/${chat.id}?dataSource=${encodeURIComponent(chat.dataSourceName)}`}
+                    className="flex flex-col gap-1 px-2 py-2 rounded-md hover:bg-zinc-800/70 text-sm transition-colors relative z-10 pointer-events-auto"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <MessageSquare size={16} className="text-primary-400 shrink-0" />
-                    <span className="truncate text-zinc-200">{chat.title}</span>
+                    <div className="flex items-center gap-2">
+                      <MessageSquare size={16} className="text-primary-400 shrink-0" />
+                      <span className="truncate text-zinc-200">{chat.title}</span>
+                    </div>
+                    <div className="text-xs text-zinc-500 pl-6">
+                      {chat.dataSourceName}
+                    </div>
                   </Link>
                 ))}
               </div>
             </div>
           </>
-        ) : (
+        )}
+        
+        {collapsed && (
           <>
             {/* Empty spacer in collapsed mode */}
             <div className="flex-1"></div>

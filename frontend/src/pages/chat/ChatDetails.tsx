@@ -26,44 +26,15 @@ declare global {
 
 export default function ChatDetails() {
   const { chatId } = useParams<{ chatId: string }>();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: 'How do I create a visualization for my sales data across different regions?',
-      sender: 'user',
-      timestamp: new Date(Date.now() - 1000 * 60 * 30),
-    },
-    {
-      id: '2',
-      content: 'I can help you visualize your regional sales data. What specific aspects would you like to highlight in your visualization? For example, are you interested in comparing total sales, growth rates, or product-specific performance across regions?',
-      sender: 'bot',
-      timestamp: new Date(Date.now() - 1000 * 60 * 29),
-    },
-    {
-      id: '3',
-      content: 'I want to compare total sales across regions and also show the quarterly trend for each region.',
-      sender: 'user',
-      timestamp: new Date(Date.now() - 1000 * 60 * 25),
-    },
-    {
-      id: '4',
-      content: 'I\'ve created a visualization that combines a bar chart for total regional sales comparison with line charts showing quarterly trends for each region. The visualization allows you to see both the overall comparison and temporal patterns simultaneously.',
-      sender: 'bot',
-      timestamp: new Date(Date.now() - 1000 * 60 * 24),
-      visualization: {
-        type: 'combination chart',
-        imageUrl: 'https://via.placeholder.com/800x400',
-      },
-    },
-  ]);
-  
+  const [title, setTitle] = useState(`Chat ${chatId}`);
+  const [dataSource, setDataSource] = useState<any>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [title, setTitle] = useState('Sales Dashboard');
   const [isListening, setIsListening] = useState(false);
-  const [placeholder, setPlaceholder] = useState('Click the microphone to speak...');
-  const recognitionRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const placeholder = "Ask a question about your data...";
+  const recognitionRef = useRef<any>(null);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -123,6 +94,27 @@ export default function ChatDetails() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Load chat data from localStorage
+  useEffect(() => {
+    if (chatId) {
+      // Load chat details
+      const recentChats = JSON.parse(localStorage.getItem('recentChats') || '[]');
+      const currentChat = recentChats.find((chat: any) => chat.id === chatId);
+      
+      if (currentChat) {
+        setTitle(currentChat.title);
+        
+        // Load data source details
+        const dataSources = JSON.parse(localStorage.getItem('dataSources') || '[]');
+        const source = dataSources.find((ds: any) => ds.name === currentChat.dataSourceName);
+        
+        if (source) {
+          setDataSource(source);
+        }
+      }
+    }
+  }, [chatId]);
+
   const handleSendMessage = () => {
     if (inputMessage.trim() === '') return;
     
@@ -178,6 +170,14 @@ export default function ChatDetails() {
             <ChevronLeft size={16} />
           </Button>
           <h1 className="text-lg font-medium">{title}</h1>
+          {dataSource && (
+            <div className="hidden md:flex items-center gap-2 text-xs text-zinc-400">
+              <span className="px-2 py-1 rounded-full bg-violet-500/20 text-violet-300">
+                {dataSource.type === 'csv' ? 'CSV' : 'Database'}
+              </span>
+              <span>{dataSource.name}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="rounded-full">
@@ -279,6 +279,22 @@ export default function ChatDetails() {
                 className="flex-1 bg-transparent border-0 py-3 px-2 text-white placeholder:text-gray-500 focus:outline-none focus:ring-0 cursor-default"
               />
               
+              {/* Listening indicator shown to the right of search bar */}
+              {isListening && (
+                <div className="flex items-center space-x-1 mr-2 bg-zinc-900/40 px-2 py-1 rounded-full">
+                  <span className="text-xs font-medium text-purple-400">Listening</span>
+                  <div className="flex space-x-1">
+                    {[...Array(3)].map((_, i) => (
+                      <span
+                        key={i}
+                        className="h-1.5 w-1.5 bg-purple-500 rounded-full animate-pulse"
+                        style={{ animationDelay: `${i * 0.2}s` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               {/* Voice button with glow effect */}
               <div className="relative p-1 mr-1 rounded-full">
                 <div className={`absolute inset-0 rounded-full ${isListening ? 'bg-gradient-to-r from-purple-600 to-pink-500 animate-pulse' : 'bg-transparent'} blur-md transition-all duration-300`}></div>
@@ -315,24 +331,6 @@ export default function ChatDetails() {
               </div>
             </div>
           </div>
-          
-          {/* Listening indicator */}
-          {isListening && (
-            <div className="absolute -bottom-10 left-0 right-0 flex justify-center">
-              <div className="flex items-center space-x-2 bg-zinc-900/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg border border-purple-500/20">
-                <span className="text-sm font-medium text-purple-400">Listening</span>
-                <div className="flex space-x-1">
-                  {[...Array(3)].map((_, i) => (
-                    <span
-                      key={i}
-                      className="h-2 w-2 bg-purple-500 rounded-full animate-pulse"
-                      style={{ animationDelay: `${i * 0.2}s` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

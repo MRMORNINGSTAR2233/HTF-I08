@@ -18,6 +18,7 @@ import Pricing from './components/sections/Pricing';
 import ChatLayout from './components/layout/ChatLayout';
 import ChatPage from './pages/chat/ChatPage';
 import ChatDetails from './pages/chat/ChatDetails';
+import DataSourceConfig from './pages/DataSourceConfig';
 
 function LandingPage() {
   useEffect(() => {
@@ -57,6 +58,7 @@ function App() {
         {/* Chat routes */}
         <Route path="/chat" element={<ChatLayout />}>
           <Route index element={<ChatPage />} />
+          <Route path="config" element={<DataSourceConfig />} />
           <Route path=":chatId" element={<ChatDetails />} />
         </Route>
 
