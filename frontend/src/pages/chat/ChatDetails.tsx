@@ -45,8 +45,10 @@ export default function ChatDetails() {
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
+      recognitionRef.current.continuous = false;
       recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
+      recognitionRef.current.maxAlternatives = 1;
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = Array.from(event.results)
@@ -54,12 +56,16 @@ export default function ChatDetails() {
           .map((result: any) => result.transcript)
           .join("");
 
+        console.log("Transcript detected:", transcript);
         setInputMessage(transcript);
       };
 
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error", event.error);
-        setIsListening(false);
+      recognitionRef.current.onend = () => {
+        console.log("Speech recognition ended");
+        if (isListening) {
+          recognitionRef.current.start();
+          console.log("Restarted after end");
+        }
       };
     }
 
@@ -273,10 +279,10 @@ export default function ChatDetails() {
                 ref={inputRef}
                 type="text"
                 value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
                 onClick={handleSearchFieldClick}
-                readOnly
                 placeholder={placeholder}
-                className="flex-1 bg-transparent border-0 py-3 px-2 text-white placeholder:text-gray-500 focus:outline-none focus:ring-0 cursor-default"
+                className="flex-1 bg-transparent border-0 py-3 px-2 text-white placeholder:text-gray-500 focus:outline-none focus:ring-0"
               />
               
               {/* Listening indicator shown to the right of search bar */}
