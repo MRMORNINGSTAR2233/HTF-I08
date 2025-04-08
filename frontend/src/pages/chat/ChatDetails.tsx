@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar'
 import { Separator } from '../../components/ui/separator';
 import { api, chatEndpoints } from './config';
 import { toast } from 'react-hot-toast';
+import axios from 'axios';
 
 // Message interface (legacy for compatibility with UI components)
 interface LegacyMessage {
@@ -108,27 +109,6 @@ export default function ChatDetails() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat data from localStorage
-  useEffect(() => {
-    if (chatId) {
-      // Load chat details
-      const recentChats = JSON.parse(localStorage.getItem('recentChats') || '[]');
-      const currentChat = recentChats.find((chat: any) => chat.id === chatId);
-      
-      if (currentChat) {
-        setTitle(currentChat.title);
-        
-        // Load data source details
-        const dataSources = JSON.parse(localStorage.getItem('dataSources') || '[]');
-        const source = dataSources.find((ds: any) => ds.name === currentChat.dataSourceName);
-        
-        if (source) {
-          setDataSource(source);
-        }
-      }
-    }
-  }, [chatId]);
-
   // Fetch chat data on component mount
   useEffect(() => {
     const fetchChatDetails = async () => {
@@ -136,22 +116,89 @@ export default function ChatDetails() {
       
       try {
         setIsLoading(true);
+        // Try to get the chat first
         const response = await api.get(chatEndpoints.getChat(parseInt(chatId)));
         
-        // Set chat messages
-        if (response.data && response.data.conversation) {
-          setMessages(response.data.conversation);
-        } else {
-          // Initialize with a welcome message if no messages
-          setMessages([{
-            role: 'system',
-            content: 'Welcome to your new chat! Ask me anything about your data.',
-            timestamp: new Date().toISOString()
-          }]);
+        // Set chat messages and title
+        if (response.data) {
+          // Set the title from the response
+          setTitle(response.data.name || `Chat ${chatId}`);
+          
+          // Set data source details
+          if (response.data.config_type) {
+            setDataSource({
+              type: 'database',
+              name: response.data.config_type
+            });
+          }
+          
+          // Set chat messages
+          if (response.data.conversation && Array.isArray(response.data.conversation)) {
+            setMessages(response.data.conversation);
+          } else {
+            // Initialize with a welcome message if no messages
+            setMessages([{
+              role: 'system',
+              content: 'Welcome to your new chat! Ask me anything about your data.',
+              timestamp: new Date().toISOString()
+            }]);
+          }
         }
       } catch (error) {
         console.error('Error fetching chat details:', error);
-        toast.error('Failed to load chat details');
+        
+        // Check if it's a 404 error (chat doesn't exist)
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          // Create a new chat with default values
+          try {
+            console.log("Creating new chat with ID:", chatId);
+            
+            // Create a new chat
+            const createResponse = await api.post(chatEndpoints.createChat, {
+              name: `Chat ${chatId}`,
+              config_id: 1, // Default config ID
+              config_type: "DATABASE" // Default type
+            });
+            
+            if (createResponse.data) {
+              console.log("Chat created successfully:", createResponse.data);
+              
+              // Set chat data from response
+              if (createResponse.data.conversation) {
+                setMessages(createResponse.data.conversation);
+              } else {
+                // Initialize with a welcome message
+                setMessages([{
+                  role: 'system',
+                  content: 'Welcome to your new chat! Ask me anything about your data.',
+                  timestamp: new Date().toISOString()
+                }]);
+              }
+              
+              // Set the title from the response
+              setTitle(createResponse.data.name || `Chat ${chatId}`);
+            }
+          } catch (createError) {
+            console.error('Error creating new chat:', createError);
+            toast.error('Failed to create a new chat');
+            
+            // Set default welcome message even on error
+            setMessages([{
+              role: 'system',
+              content: 'Error loading chat. Please try again later.',
+              timestamp: new Date().toISOString()
+            }]);
+          }
+        } else {
+          toast.error('Failed to load chat details');
+          
+          // Set default error message
+          setMessages([{
+            role: 'system',
+            content: 'Error loading chat. Please try again later.',
+            timestamp: new Date().toISOString()
+          }]);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -175,25 +222,42 @@ export default function ChatDetails() {
     setIsSending(true);
     
     try {
-      // Send message to backend
-      await api.put(chatEndpoints.addMessage(parseInt(chatId)), userMessage);
+      console.log("Sending message to chat ID:", chatId);
       
-      // Simulate AI response (in a real app, this would be handled by the backend)
-      setTimeout(async () => {
-        const aiMessage: ChatMessage = {
-          role: 'assistant',
-          content: 'This is a simulated response. In a real application, this would be generated by the AI based on your data source.',
-          timestamp: new Date().toISOString()
-        };
-        
-        // Update messages with AI response
-        setMessages(prev => [...prev, aiMessage]);
-        setIsSending(false);
-      }, 1000);
+      // Send message to backend using POST with proper data structure
+      const response = await api.post(
+        chatEndpoints.addMessage(parseInt(chatId)), 
+        { content: input }
+      );
       
+      console.log("Message sent successfully, response:", response.data);
+      
+      // Update the messages with the full conversation from the backend
+      if (response.data && response.data.conversation) {
+        setMessages(response.data.conversation);
+      } else {
+        console.warn("Message sent but no conversation data returned");
+        toast.error("Message sent but no response received");
+      }
     } catch (error) {
       console.error('Error sending message:', error);
-      toast.error('Failed to send message');
+      
+      if (axios.isAxiosError(error) && error.response) {
+        if (error.response.status === 404) {
+          toast.error('Chat not found. Please create a new chat.');
+        } else {
+          toast.error(`Failed to send message: ${error.response.status} ${error.response.statusText}`);
+        }
+      } else {
+        toast.error('Failed to send message: network error');
+      }
+      
+      // Remove the optimistically added message on error
+      setMessages(prev => prev.filter(msg => 
+        msg.content !== userMessage.content || 
+        msg.timestamp !== userMessage.timestamp
+      ));
+    } finally {
       setIsSending(false);
     }
   };

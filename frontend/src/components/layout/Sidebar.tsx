@@ -1,12 +1,15 @@
-import { useState, useRef, MouseEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, MessageSquare, Database, FileText, Activity, X, Edit, Check } from 'lucide-react';
+import { useState, useRef, MouseEvent, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, Plus, MessageSquare, Database, FileText, Activity, X, Edit, Check, LogOut } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { cn } from '../../lib/utils';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import authService from '../../services/authService';
+import { api, chatEndpoints } from '../../pages/chat/config';
+import { toast } from 'react-hot-toast';
 
 interface DataSourceConfig {
   type: 'csv' | 'database';
@@ -32,7 +35,19 @@ interface SidebarProps {
   setCollapsed: (collapsed: boolean) => void;
 }
 
+// Chat item interface
+interface ChatItem {
+  id: number | string;
+  title: string;
+  dataSourceName: string;
+  createdAt?: string;
+}
+
 export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
+  const navigate = useNavigate();
+  // User data state
+  const [userData, setUserData] = useState<{username: string, email?: string} | null>(null);
+
   // Data source selection and configuration states
   const [showDataSourceSelection, setShowDataSourceSelection] = useState(false);
   const [selectedDataSource, setSelectedDataSource] = useState<'csv' | 'database' | null>(null);
@@ -51,13 +66,111 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const [editingSource, setEditingSource] = useState<string | null>(null);
 
   // Recent chats state
-  const [recentChats, setRecentChats] = useState([
-    { id: '1', title: 'Data Visualization Project', dataSourceName: 'Sales Data' },
-    { id: '2', title: 'Marketing Analytics', dataSourceName: 'Customer DB' },
-    { id: '3', title: 'Sales Dashboard', dataSourceName: 'Q4 Data' }
-  ]);
+  const [recentChats, setRecentChats] = useState<ChatItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load user data when component mounts
+  useEffect(() => {
+    const user = authService.getUser();
+    if (user) {
+      setUserData(user);
+    }
+  }, []);
+
+  // Fetch chats from API
+  useEffect(() => {
+    const fetchChats = async () => {
+      try {
+        setIsLoading(true);
+        
+        let response;
+        
+        // Try the primary endpoint first - users/chats
+        try {
+          console.log("Trying primary endpoint:", chatEndpoints.getUserChats);
+          response = await api.get(chatEndpoints.getUserChats);
+        } catch (primaryError) {
+          console.warn('Primary chat endpoint failed, trying fallback 1:', primaryError);
+          
+          // First fallback: /user/chats
+          try {
+            console.log("Trying fallback 1:", chatEndpoints.userChatsAlt1);
+            response = await api.get(chatEndpoints.userChatsAlt1);
+          } catch (fallback1Error) {
+            console.warn('First fallback failed, trying fallback 2:', fallback1Error);
+            
+            // Second fallback: POST to /chats/user
+            try {
+              console.log("Trying fallback 2:", chatEndpoints.userChatsAlt2);
+              response = await api.post(chatEndpoints.userChatsAlt2);
+            } catch (fallback2Error) {
+              console.warn('Second fallback failed, trying final fallback:', fallback2Error);
+              
+              // Final fallback: GET /chats
+              console.log("Trying final fallback:", chatEndpoints.getChats);
+              response = await api.get(chatEndpoints.getChats);
+            }
+          }
+        }
+        
+        // Transform API data to match UI format
+        if (response && response.data && Array.isArray(response.data)) {
+          console.log("Received chat data:", response.data);
+          
+          const chats = response.data.map((chat: any) => ({
+            id: chat.id,
+            title: chat.name || `Chat ${chat.id}`,
+            dataSourceName: chat.config_type || 'Database', // Display config type or default
+            createdAt: chat.created_at
+          }));
+          
+          setRecentChats(chats);
+        } else {
+          console.warn("Received unexpected data format:", response?.data);
+          setRecentChats([]);
+        }
+      } catch (error) {
+        console.error('Error fetching chats after all attempts:', error);
+        setRecentChats([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchChats();
+  }, []);
+
+  // Handle logout
+  const handleLogout = (e: MouseEvent) => {
+    e.stopPropagation();
+    authService.logout();
+    navigate('/login');
+  };
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!userData?.username) return '?';
+    
+    const username = userData.username.trim();
+    if (!username) return '?';
+    
+    // Get first letter of username
+    const firstLetter = username.charAt(0).toUpperCase();
+    
+    // If there's an email with a last name
+    if (userData?.email) {
+      const emailName = userData.email.split('@')[0];
+      const nameParts = emailName.split(/[._-]/);
+      if (nameParts.length > 1) {
+        const lastLetter = nameParts[nameParts.length - 1].charAt(0).toUpperCase();
+        return `${firstLetter}${lastLetter}`;
+      }
+    }
+    
+    return firstLetter;
+  };
 
   const handleToggle = () => {
     setCollapsed(!collapsed);
@@ -78,10 +191,26 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   };
 
   // Handler for new chat button
-  const handleNewChat = (e: MouseEvent) => {
+  const handleNewChat = async (e: MouseEvent) => {
     e.stopPropagation();
-    // Navigate to the configuration page
-    window.location.href = "/chat/config";
+    try {
+      // Create a new chat via API
+      const response = await api.post(chatEndpoints.createChat, {
+        name: "New Chat",
+        config_id: 1, // Default config
+        config_type: "DATABASE" // Default type
+      });
+      
+      if (response.data && response.data.id) {
+        // Navigate to the new chat
+        navigate(`/chat/${response.data.id}`);
+      } else {
+        toast.error("Failed to create a new chat");
+      }
+    } catch (error) {
+      console.error("Error creating new chat:", error);
+      toast.error("Failed to create a new chat");
+    }
   };
 
   // Handler for selecting data source type
@@ -553,22 +682,28 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                 Recent Chats
               </div>
               <div className="space-y-1">
-                {recentChats.map((chat) => (
-                  <Link
-                    key={chat.id}
-                    to={`/chat/${chat.id}?dataSource=${encodeURIComponent(chat.dataSourceName)}`}
-                    className="flex flex-col gap-1 px-2 py-2 rounded-md hover:bg-zinc-800/70 text-sm transition-colors relative z-10 pointer-events-auto"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center gap-2">
-                      <MessageSquare size={16} className="text-primary-400 shrink-0" />
-                      <span className="truncate text-zinc-200">{chat.title}</span>
-                    </div>
-                    <div className="text-xs text-zinc-500 pl-6">
-                      {chat.dataSourceName}
-                    </div>
-                  </Link>
-                ))}
+                {isLoading ? (
+                  <div className="text-xs text-center py-2 text-zinc-500">Loading chats...</div>
+                ) : recentChats.length > 0 ? (
+                  recentChats.map((chat) => (
+                    <Link
+                      key={chat.id}
+                      to={`/chat/${chat.id}`}
+                      className="flex flex-col gap-1 px-2 py-2 rounded-md hover:bg-zinc-800/70 text-sm transition-colors relative z-10 pointer-events-auto"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MessageSquare size={16} className="text-primary-400 shrink-0" />
+                        <span className="truncate text-zinc-200">{chat.title}</span>
+                      </div>
+                      <div className="text-xs text-zinc-500 pl-6">
+                        {chat.dataSourceName}
+                      </div>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="text-xs text-center py-2 text-zinc-500">No chats found</div>
+                )}
               </div>
             </div>
           </>
@@ -591,26 +726,56 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           "p-4 relative z-10",
           collapsed && "flex justify-center"
         )}>
-          <Link 
-            to="/profile" 
-            className={cn(
-              "flex items-center gap-3 pointer-events-auto hover:bg-zinc-800/70 rounded-lg transition-colors",
-              collapsed ? "justify-center px-1 py-1" : "px-2 py-1.5"
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Avatar className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-600 via-violet-600 to-fuchsia-500 shadow-md border border-purple-500/20">
-              <AvatarImage src="" />
-              <AvatarFallback className="font-bold text-white text-xs">AK</AvatarFallback>
-            </Avatar>
-            
+          <div className="flex flex-col w-full gap-2">
+            <Link 
+              to="/profile" 
+              className={cn(
+                "flex items-center gap-3 pointer-events-auto hover:bg-zinc-800/70 rounded-lg transition-colors",
+                collapsed ? "justify-center px-1 py-1" : "px-2 py-1.5"
+              )}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Avatar className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-600 via-violet-600 to-fuchsia-500 shadow-md border border-purple-500/20">
+                <AvatarImage src="" />
+                <AvatarFallback className="font-bold text-white text-xs">{getUserInitials()}</AvatarFallback>
+              </Avatar>
+              
+              {!collapsed && (
+                <div className="flex flex-col overflow-hidden">
+                  <span className="text-sm font-medium truncate text-zinc-200">
+                    {userData?.username || 'User'}
+                  </span>
+                  <span className="text-xs text-white/60 truncate">
+                    {userData?.email || ''}
+                  </span>
+                </div>
+              )}
+            </Link>
+
             {!collapsed && (
-              <div className="flex flex-col overflow-hidden">
-                <span className="text-sm font-medium truncate text-zinc-200">Akshay Kumar</span>
-                <span className="text-xs text-white/60 truncate">akshay@example.com</span>
-              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800/70"
+                onClick={handleLogout}
+              >
+                <LogOut size={14} className="flex-shrink-0" />
+                <span>Logout</span>
+              </Button>
             )}
-          </Link>
+
+            {collapsed && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-lg hover:bg-zinc-800/70"
+                onClick={handleLogout}
+                title="Logout"
+              >
+                <LogOut size={14} className="text-zinc-400 hover:text-white" />
+              </Button>
+            )}
+          </div>
         </div>
         
         {/* Collapsed toggle button is now directly adjacent to the profile */}

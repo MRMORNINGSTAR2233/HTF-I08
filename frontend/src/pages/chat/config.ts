@@ -3,7 +3,7 @@ import axios from 'axios';
 import authService from '../../services/authService';
 import { toast } from 'react-hot-toast';
 
-// Base URL for API - already includes /api/v1 from env file
+// Base URL for API - check if already includes /api/v1
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // For building paths, check if BASE_URL already includes /api/v1
@@ -99,17 +99,24 @@ export const databaseEndpoints = {
 
 // Chat endpoints
 export const chatEndpoints = {
-  // Create a new chat
+  // Create a new chat (POST)
   createChat: `${API_V1_STR}/chats`,
   
-  // Get a specific chat
+  // Get a specific chat (GET)
   getChat: (id: number) => `${API_V1_STR}/chats/${id}`,
   
-  // Get all chats for current user
+  // Get all chats for current user (GET) - correct endpoint via users API
+  getUserChats: `${API_V1_STR}/users/chats`,
+  
+  // Alternative endpoints (might be needed for compatibility)
+  userChatsAlt1: `${API_V1_STR}/user/chats`,
+  userChatsAlt2: `${API_V1_STR}/chats/user`,
+  
+  // Legacy endpoint
   getChats: `${API_V1_STR}/chats`,
   
-  // Add a message to a chat
-  addMessage: (id: number) => `${API_V1_STR}/chats/${id}/message`,
+  // Add a message to a chat (POST)
+  addMessage: (id: number) => `${API_V1_STR}/chats/${id}/messages`,
 };
 
 // File upload endpoints

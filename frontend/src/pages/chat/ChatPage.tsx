@@ -7,6 +7,7 @@ import { Input } from "../../components/ui/input";
 import { useNavigate } from 'react-router-dom';
 import { api, chatEndpoints } from './config';
 import { toast } from 'react-hot-toast';
+import axios from 'axios';
 
 // Declare SpeechRecognition type to avoid Typescript errors
 declare global {
@@ -36,6 +37,41 @@ export default function ChatPage() {
   const [recentChats, setRecentChats] = useState<ChatItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // New function to create a chat
+  const createNewChat = async () => {
+    try {
+      console.log("Creating new chat...");
+      setIsLoading(true);
+      
+      const response = await api.post(chatEndpoints.createChat, {
+        name: searchText.trim() ? `Chat about: ${searchText.trim().substring(0, 30)}...` : "New Chat",
+        config_id: 1, // Default config ID
+        config_type: "DATABASE" // Default type
+      });
+      
+      // Navigate to the new chat
+      if (response.data && response.data.id) {
+        console.log("Chat created successfully with ID:", response.data.id);
+        toast.success("Chat created successfully");
+        navigate(`/chat/${response.data.id}`);
+      } else {
+        console.error("Invalid response when creating chat:", response.data);
+        toast.error("Failed to create a new chat: invalid response");
+      }
+    } catch (error) {
+      console.error("Error creating new chat:", error);
+      
+      // More descriptive error message
+      if (axios.isAxiosError(error) && error.response) {
+        toast.error(`Failed to create chat: ${error.response.status} ${error.response.statusText}`);
+      } else {
+        toast.error("Failed to create a new chat: network error");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (
       typeof window !== "undefined" &&
@@ -54,6 +90,15 @@ export default function ChatPage() {
           .join("");
 
         setSearchText(transcript);
+        
+        // Check if this is a final result
+        if (event.results[0].isFinal) {
+          console.log("Final transcript:", transcript);
+          // Create a new chat with this transcript
+          if (transcript.trim()) {
+            createNewChat();
+          }
+        }
       };
 
       recognitionRef.current.onerror = (event: any) => {
@@ -67,27 +112,64 @@ export default function ChatPage() {
         recognitionRef.current.stop();
       }
     };
-  }, []);
+  }, [createNewChat]);
 
   useEffect(() => {
     // Fetch chats from the API
     const fetchChats = async () => {
       try {
         setIsLoading(true);
-        const response = await api.get(chatEndpoints.getChats);
+        
+        let response;
+        
+        // Try the primary endpoint first - users/chats
+        try {
+          console.log("Trying primary endpoint:", chatEndpoints.getUserChats);
+          response = await api.get(chatEndpoints.getUserChats);
+        } catch (primaryError) {
+          console.warn('Primary chat endpoint failed, trying fallback 1:', primaryError);
+          
+          // First fallback: /user/chats
+          try {
+            console.log("Trying fallback 1:", chatEndpoints.userChatsAlt1);
+            response = await api.get(chatEndpoints.userChatsAlt1);
+          } catch (fallback1Error) {
+            console.warn('First fallback failed, trying fallback 2:', fallback1Error);
+            
+            // Second fallback: POST to /chats/user
+            try {
+              console.log("Trying fallback 2:", chatEndpoints.userChatsAlt2);
+              response = await api.post(chatEndpoints.userChatsAlt2);
+            } catch (fallback2Error) {
+              console.warn('Second fallback failed, trying final fallback:', fallback2Error);
+              
+              // Final fallback: GET /chats
+              console.log("Trying final fallback:", chatEndpoints.getChats);
+              response = await api.get(chatEndpoints.getChats);
+            }
+          }
+        }
+        
+        console.log("Received chat data:", response?.data);
         
         // Transform the data to match our UI format
-        const chats = response.data.map((chat: any) => ({
-          id: chat.id,
-          title: chat.name,
-          dataSourceName: chat.name, // Using chat name as datasource name for display
-          createdAt: new Date(chat.created_at).toISOString(),
-        }));
-        
-        setRecentChats(chats);
+        if (response && response.data && Array.isArray(response.data)) {
+          const chats = response.data.map((chat: any) => ({
+            id: chat.id,
+            title: chat.name || `Chat ${chat.id}`,
+            dataSourceName: chat.config_type || 'Database', // More descriptive
+            createdAt: chat.created_at ? new Date(chat.created_at).toISOString() : new Date().toISOString(),
+          }));
+          
+          setRecentChats(chats);
+        } else {
+          console.warn("Received unexpected data format:", response?.data);
+          setRecentChats([]);
+        }
       } catch (error) {
-        console.error("Error fetching chats:", error);
+        console.error("Error fetching chats after all attempts:", error);
         toast.error("Failed to load chats");
+        setRecentChats([]);
       } finally {
         setIsLoading(false);
       }
@@ -95,6 +177,13 @@ export default function ChatPage() {
 
     fetchChats();
   }, []);
+
+  // Add a handler to create new chat when user speaks or enters text
+  const handleSearch = () => {
+    if (searchText.trim()) {
+      createNewChat();
+    }
+  };
 
   const toggleListening = () => {
     if (isListening) {
@@ -159,6 +248,11 @@ export default function ChatPage() {
                 placeholder={placeholder}
                 readOnly
                 onClick={handleSearchFieldClick}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchText.trim()) {
+                    handleSearch();
+                  }
+                }}
                 style={{ outline: 'none', boxShadow: 'none' }}
                 className="flex-1 bg-transparent border-0 py-6 px-2 text-lg text-white placeholder:text-gray-500 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus:border-transparent focus-visible:border-transparent cursor-default !outline-none !ring-0 !ring-offset-0"
               />
