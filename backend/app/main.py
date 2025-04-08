@@ -9,7 +9,9 @@ from .routers import file_upload, data_preview
 # Initialize FastAPI app
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # Set all CORS enabled origins
@@ -31,10 +33,10 @@ if settings.CORS_ORIGINS:
         allow_headers=["*"],
     )
 
-# Include API routers
+# Include API routers - corrected prefix structure
 app.include_router(
     auth.router,
-    prefix=f"{settings.API_V1_STR}/auth",
+    prefix=settings.API_V1_STR,
     tags=["authentication"]
 )
 
@@ -52,18 +54,20 @@ app.include_router(
 
 app.include_router(
     chat.router,
-    prefix=f"{settings.API_V1_STR}/chats",
+    prefix=settings.API_V1_STR,
     tags=["chats"]
 )
 
 app.include_router(
     file_upload.router,
-    prefix="/api/v1"
+    prefix=settings.API_V1_STR,
+    tags=["file-upload"]
 )
 
 app.include_router(
     data_preview.router,
-    prefix="/api/v1"
+    prefix=settings.API_V1_STR,
+    tags=["data-preview"]
 )
 
 # Root endpoint

@@ -29,3 +29,15 @@ class DatabaseConfig(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    @property
+    def connection_string(self) -> str:
+        """Generate a connection string from the database configuration fields"""
+        if self.db_type == 'mysql':
+            return f"mysql+pymysql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database_name}"
+        elif self.db_type == 'postgresql':
+            return f"postgresql://{self.username}:{self.password}@{self.host}:{self.port}/{self.database_name}"
+        else:
+            # For CSV/Excel files, we don't have a connection string
+            # This should be handled separately in the application code
+            return None

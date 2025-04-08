@@ -7,6 +7,7 @@ import { Separator } from '../../components/ui/separator';
 import { api, chatEndpoints } from './config';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
+import DataVisualization from '../../components/charts/DataVisualization';
 
 // Message interface (legacy for compatibility with UI components)
 
@@ -483,24 +484,12 @@ export default function ChatDetails() {
                 // Get data from message.data or message.content.data
                 const messageData = message.data || [];
                 const contentData = (typeof message.content === 'object' && message.content?.data) ? message.content.data : [];
-                const dataLength = messageData.length + (contentData?.length || 0);
+                const data = contentData.length > 0 ? contentData : messageData;
+                const query = typeof message.content === 'object' ? message.content.query : null;
                 
-                if (dataLength > 0) {
+                if (data.length > 0) {
                   return (
-                    <div className="mt-3 border-t border-purple-900/30 pt-3">
-                      <div className="text-xs text-purple-300 mb-2">Data Visualization</div>
-                      <div className="bg-black/30 p-2 rounded-md">
-                        <div className="text-xs text-gray-400">
-                          {dataLength} data points available for visualization
-                        </div>
-                        <div className="flex items-center justify-center mt-2">
-                          <Button variant="outline" size="sm" className="text-xs flex items-center gap-1">
-                            <ChartBar size={12} />
-                            View Chart
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                    <DataVisualization data={data} query={query} />
                   );
                 }
                 return null;

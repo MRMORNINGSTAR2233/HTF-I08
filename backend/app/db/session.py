@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from app.core.config import settings
 
 # Parse connection URL
-database_url = settings.DATABASE_URL
+database_url = str(settings.DATABASE_URL)  # Convert PostgresDsn to string
 
 # Fix for 'postgres://' vs 'postgresql://' in connection strings
 # Neon DB and other services often use 'postgres://', but SQLAlchemy requires 'postgresql://'
