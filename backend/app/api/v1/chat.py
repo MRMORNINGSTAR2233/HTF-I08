@@ -1,36 +1,50 @@
-from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.api.deps import get_db, get_current_user
-from app.models.chat import Chat
-from app.schemas.chat import ChatCreate, ChatUpdate, ChatInDB, Message
-from datetime import datetime
+from typing import List
+from ...models.chat import Chat
+from ...schemas.chat import ChatCreate, ChatResponse, MessageCreate
+from ...services.chat_service import ChatService
+from ...auth.deps import get_current_user
+from ...api.deps import get_db
 
 router = APIRouter()
 
-@router.post("/", response_model=ChatInDB)
-def create_chat(
-    chat: ChatCreate,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    db_chat = Chat(
-        name=chat.name,
-        config_id=chat.config_id,
-        user_id=current_user.id,
-        config_type=chat.config_type,
-        conversation=[]
-    )
-    db.add(db_chat)
-    db.commit()
-    db.refresh(db_chat)
-    return db_chat
+chat_service = ChatService()
 
-@router.get("/{chat_id}", response_model=ChatInDB)
-def get_chat(
+@router.post("/chats", response_model=ChatResponse)
+async def create_chat(
+    chat_create: ChatCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        return chat_service.create_chat(
+            db, 
+            current_user.id, 
+            chat_create.name, 
+            chat_create.config_id,
+            chat_create.config_type
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/chats/{chat_id}/messages")
+async def send_message(
     chat_id: int,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    message: MessageCreate,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        return await chat_service.query_data(db, chat_id, message.content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/chats/{chat_id}", response_model=ChatResponse)
+async def get_chat(
+    chat_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     chat = db.query(Chat).filter(
         Chat.id == chat_id,
@@ -40,43 +54,35 @@ def get_chat(
         raise HTTPException(status_code=404, detail="Chat not found")
     return chat
 
-@router.put("/{chat_id}/message", response_model=ChatInDB)
-def add_message(
-    chat_id: int,
-    message: Message,
+@router.get("/chats", response_model=List[ChatResponse])
+async def get_user_chats(
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    skip: int = 0,
+    limit: int = 100
 ):
+    """Get all chats for the current user."""
+    chats = db.query(Chat).filter(
+        Chat.user_id == current_user.id
+    ).offset(skip).limit(limit).all()
+    return chats
+
+@router.delete("/chats/{chat_id}", status_code=204)
+async def delete_chat(
+    chat_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a chat by ID."""
     chat = db.query(Chat).filter(
         Chat.id == chat_id,
         Chat.user_id == current_user.id
     ).first()
+    
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
     
-    message.timestamp = datetime.now()
-    if not chat.conversation:
-        chat.conversation = []
-    chat.conversation.append(message.model_dump())
-    
+    db.delete(chat)
     db.commit()
-    db.refresh(chat)
-    return chat
-
-@router.get("/", response_model=List[ChatInDB])
-def list_chats(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    return db.query(Chat).filter(Chat.user_id == current_user.id).all()
-
-@router.post("/user", response_model=List[ChatInDB])
-def get_user_chats(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """
-    Get all chats for the current user using POST method.
-    This is an alternative to the GET endpoint for clients that have issues with GET requests.
-    """
-    return db.query(Chat).filter(Chat.user_id == current_user.id).all()
+    
+    return None
