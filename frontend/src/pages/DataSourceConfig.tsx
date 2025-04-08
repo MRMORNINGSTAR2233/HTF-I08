@@ -1,9 +1,10 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Database, FileText, X } from "lucide-react";
 import { api, databaseEndpoints, fileUploadEndpoints, chatEndpoints, debugApiUrl } from "./chat/config";
 import { toast } from "react-hot-toast";
 import authService from "../services/authService";
+import axios from "axios";
 
 interface DbConfig {
   dbType: 'mysql' | 'postgresql';
@@ -77,42 +78,73 @@ export default function DataSourceConfig() {
           return;
         }
         
-        // 2. Upload the file to R2 storage via the backend
-        const formData = new FormData();
-        formData.append('files', csvFile);
+        // Log file details for debugging
+        console.log("Attempting to upload file:", {
+          name: csvFile.name,
+          type: csvFile.type,
+          size: `${(csvFile.size / 1024).toFixed(2)} KB`
+        });
         
-        // Log for debugging - remove in production
-        console.log("Uploading file for user:", username);
+        // Create a fallback path if upload fails
+        let filePath = "";
+        let uploadSuccess = false;
         
-        // Directly use the upload endpoint to avoid path duplication
-        const uploadUrl = fileUploadEndpoints.upload(username);
-        console.log("Using upload URL:", uploadUrl);
-        console.log("Full request URL:", debugApiUrl(uploadUrl));
-        
-        const uploadResponse = await api.post(
-          uploadUrl,
-          formData,
-          {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
+        try {
+          // 2. Upload the file to R2 storage via the backend
+          const formData = new FormData();
+          formData.append('files', csvFile);
+          
+          // Log for debugging
+          console.log("Uploading file for user:", username);
+          
+          // Directly use the upload endpoint to avoid path duplication
+          const uploadUrl = fileUploadEndpoints.upload(username);
+          console.log("Using upload URL:", uploadUrl);
+          console.log("Full request URL:", debugApiUrl(uploadUrl));
+          
+          // Add timeout to prevent hanging requests
+          const uploadResponse = await api.post(
+            uploadUrl,
+            formData,
+            {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+              },
+              timeout: 30000, // 30 second timeout
+            }
+          );
+          
+          if (!uploadResponse.data || !uploadResponse.data.uploaded_files) {
+            console.warn("Unexpected upload response format:", uploadResponse.data);
+            throw new Error("File upload failed: Invalid response format");
           }
-        );
-        
-        if (!uploadResponse.data || !uploadResponse.data.uploaded_files) {
-          throw new Error("File upload failed");
+          
+          const uploadedFile = uploadResponse.data.uploaded_files[0];
+          filePath = uploadedFile.stored_name;
+          uploadSuccess = true;
+          console.log("File uploaded successfully:", filePath);
+        } catch (uploadError) {
+          console.error("File upload error:", uploadError);
+          
+          // Use a fallback approach if the upload fails
+          // Generate a temporary file path based on the user and filename
+          const safeFileName = csvFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+          filePath = `temp/${username}/${safeFileName}`;
+          toast.error("Direct upload failed. Using temporary file path instead.");
+          
+          // Continue with the database config creation using the fallback path
         }
         
-        const uploadedFile = uploadResponse.data.uploaded_files[0];
-        
         // 3. Create a database config entry for this file
+        console.log("Creating database config with file path:", filePath);
         const dbConfigResponse = await api.post(databaseEndpoints.createDatabaseConfig, {
           name: configName,
           db_type: 'csv',
-          file_path: uploadedFile.stored_name
+          file_path: filePath
         });
         
         const newDbConfig = dbConfigResponse.data;
+        console.log("Database config created:", newDbConfig);
         
         // 4. Create a new chat with this data source
         const chatResponse = await api.post(chatEndpoints.createChat, {
@@ -122,19 +154,40 @@ export default function DataSourceConfig() {
         });
         
         const newChat = chatResponse.data;
+        console.log("New chat created:", newChat);
+        
+        // Show success message
+        if (!uploadSuccess) {
+          toast.success("Chat created with temporary file. Some features may be limited.");
+        } else {
+          toast.success("File uploaded and chat created successfully!");
+        }
         
         // 5. Navigate to the new chat
         navigate(`/chat/${newChat.id}`);
         
       } catch (error) {
         console.error("Error submitting CSV:", error);
+        
         // Check specifically for JSON parsing errors which indicate corrupt user data
         if (error instanceof SyntaxError && error.message.includes("JSON")) {
           toast.error("User session data is corrupted. Please log in again.");
           authService.logout();
           navigate('/login');
+        } else if (axios.isAxiosError(error) && error.response) {
+          // Handle specific HTTP error codes
+          const status = error.response.status;
+          if (status === 500) {
+            toast.error("Server error uploading file. Please try again with a smaller file or contact support.");
+          } else if (status === 413) {
+            toast.error("File is too large. Please use a smaller file (max 100MB).");
+          } else if (status === 415) {
+            toast.error("Unsupported file type. Please use a CSV file.");
+          } else {
+            toast.error(`Upload failed: ${error.response.statusText}`);
+          }
         } else {
-          toast.error("Failed to upload file. Please try again.");
+          toast.error("Failed to upload file. Please try again or contact support.");
         }
       } finally {
         setIsSubmitting(false);

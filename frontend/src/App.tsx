@@ -1,8 +1,11 @@
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import './index.css';
 import authService from './services/authService';
+import Aura from './components/effects/Aura';
+import WakeUpCall from './components/WakeUpCall';
 
 // Landing page components
 import Navbar from './components/layout/Navbar';
@@ -21,6 +24,7 @@ import ChatLayout from './components/layout/ChatLayout';
 import ChatPage from './pages/chat/ChatPage';
 import ChatDetails from './pages/chat/ChatDetails';
 import DataSourceConfig from './pages/DataSourceConfig';
+// import ConfigPage from './pages/chat/ConfigPage';
 
 // Auth components
 import Login from './pages/auth/Login';
@@ -60,6 +64,12 @@ function LandingPage() {
 }
 
 function App() {
+  const [isAuraAwakened, setIsAuraAwakened] = useState(false);
+
+  const handleWakeUpDetected = () => {
+    setIsAuraAwakened(true);
+  };
+
   useEffect(() => {
     // Add dark mode class to html element
     document.documentElement.classList.add('dark');
@@ -77,21 +87,22 @@ function App() {
       }} />
       <Router>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          {/* <Route path="/" element={
+            isAuraAwakened ? <Navigate to="/aura" /> : <WakeUpCall onWakeUpDetected={handleWakeUpDetected} />
+          } /> */}
+          <Route path="/aura" element={<Aura />} />
+          <Route path="/test-aura" element={<Aura />} />
+          <Route path="/chat" element={<ChatLayout />}>
+            <Route index element={<ChatPage />} />
+            <Route path="config" element={<DataSourceConfig />} />
+            <Route path=":chatId" element={<ChatDetails />} />
+          </Route>
+          {/* <Route path="/chat/config" element={<ConfigPage />} /> */}
           
           {/* Auth routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           
-          {/* Protected Chat routes */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/chat" element={<ChatLayout />}>
-              <Route index element={<ChatPage />} />
-              <Route path="config" element={<DataSourceConfig />} />
-              <Route path=":chatId" element={<ChatDetails />} />
-            </Route>
-          </Route>
-
           {/* Fallback route */}
           <Route path="*" element={<LandingPage />} />
         </Routes>

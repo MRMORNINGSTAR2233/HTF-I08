@@ -41,6 +41,15 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(true);
   // Add state for showing Aura component
   const [showAura, setShowAura] = useState(false);
+  // Add state for session ID
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  // Add state for transcript
+  const [transcript, setTranscript] = useState("");
+  // Add refs for media recorder
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  // Add state for MIME type
+  const [mimeType, setMimeType] = useState<string>('audio/webm;codecs=opus');
 
   // New function to create a chat
   const createNewChat = async () => {
@@ -80,6 +89,101 @@ export default function ChatPage() {
     }
   };
 
+  // Start a new session for AssemblyAI
+  const startSession = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/start-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ language: 'en-US' }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start session');
+      }
+
+      const data = await response.json();
+      setSessionId(data.session_id);
+      return data.session_id;
+    } catch (err) {
+      console.error('Failed to start speech recognition session:', err);
+      return null;
+    }
+  };
+
+  // Process audio chunks
+  const processAudioChunk = async (chunk: Blob) => {
+    if (!sessionId) return;
+    
+    const formData = new FormData();
+    
+    // Determine the file extension based on the MIME type
+    let fileExtension = 'webm';
+    if (mimeType.includes('ogg')) {
+      fileExtension = 'ogg';
+    } else if (mimeType.includes('mp4')) {
+      fileExtension = 'mp4';
+    }
+    
+    // Log the audio chunk info for debugging
+    console.log(`Sending audio chunk: size=${chunk.size}, type=${chunk.type}, extension=${fileExtension}`);
+    
+    // The backend expects a file with the field name 'audio'
+    formData.append('audio', chunk, `audio.${fileExtension}`);
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/process-audio/${sessionId}`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Error response from AssemblyAI:', errorData);
+        console.error(`Error status: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to process audio: ${response.status} ${response.statusText}`);
+      }
+
+      const resultsResponse = await fetch(`http://localhost:8000/api/get-results/${sessionId}`);
+      if (resultsResponse.ok) {
+        const resultsData = await resultsResponse.json();
+        if (resultsData.results && resultsData.results.length > 0) {
+          const latestResult = resultsData.results[resultsData.results.length - 1];
+          setTranscript(latestResult.text || '');
+          
+          // Remove wake-up phrase detection
+        }
+      }
+    } catch (err) {
+      console.error('Error processing audio with AssemblyAI:', err);
+      
+      // Don't display this error to the user - we'll rely on browser SpeechRecognition instead
+      console.log('Using browser SpeechRecognition as fallback due to API errors');
+    }
+  };
+
+  // Stop recording
+  const stopRecording = async () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setIsListening(false);
+      
+      // Stop the session
+      if (sessionId) {
+        try {
+          await fetch(`http://localhost:8000/api/stop-session/${sessionId}`, {
+            method: 'POST',
+          });
+        } catch (err) {
+          console.error('Error stopping session:', err);
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     if (
       typeof window !== "undefined" &&
@@ -90,6 +194,7 @@ export default function ChatPage() {
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-US';
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = Array.from(event.results)
@@ -99,10 +204,14 @@ export default function ChatPage() {
 
         setSearchText(transcript);
         
+        // Also update our transcript display to ensure we see what's being recognized
+        setTranscript(transcript);
+        
         // Check if this is a final result
         if (event.results[0].isFinal) {
-          console.log("Final transcript:", transcript);
-          // Create a new chat with this transcript
+          console.log("Final transcript from browser:", transcript);
+          
+          // Remove wake-up phrase detection, just create a new chat with transcript
           if (transcript.trim()) {
             createNewChat();
           }
@@ -166,31 +275,118 @@ export default function ChatPage() {
     }
   };
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
     if (isListening) {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
+      stopRecording();
       setIsListening(false);
-      setShowAura(false); // Hide Aura when stopping listening
+      setPlaceholder("Click the microphone to speak...");
     } else {
+      // Start browser's speech recognition first
+      let speechRecognitionStarted = false;
+      
       if (recognitionRef.current) {
-        recognitionRef.current.start();
-        setSearchText("");
+        try {
+          recognitionRef.current.start();
+          speechRecognitionStarted = true;
+          setSearchText("");
+          setPlaceholder("Speak to create a new chat...");
+          console.log("Browser speech recognition started successfully");
+        } catch (e) {
+          console.error("Error starting speech recognition:", e);
+          toast.error("Failed to start speech recognition");
+        }
       }
-      setIsListening(true);
-      setShowAura(true); // Show Aura when starting to listen
+      
+      // Set listening state based on browser recognition success
+      if (speechRecognitionStarted) {
+        setIsListening(true);
+      }
+      
+      // Try to start AssemblyAI recording in parallel - but don't block on success
+      try {
+        console.log("Attempting to start microphone for AssemblyAI...");
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Try to use the preferred MIME type, with fallbacks
+        let mimeType = 'audio/webm;codecs=opus';
+        let mediaRecorder;
+        
+        try {
+          mediaRecorder = new MediaRecorder(stream, {
+            mimeType: mimeType,
+            audioBitsPerSecond: 128000
+          });
+        } catch (e) {
+          console.warn('Preferred MIME type not supported, trying alternatives');
+          // Try alternative MIME types
+          const mimeTypes = [
+            'audio/webm',
+            'audio/ogg;codecs=opus',
+            'audio/mp4'
+          ];
+          
+          for (const type of mimeTypes) {
+            try {
+              mediaRecorder = new MediaRecorder(stream, {
+                mimeType: type,
+                audioBitsPerSecond: 128000
+              });
+              mimeType = type;
+              console.log(`Using MIME type: ${type}`);
+              break;
+            } catch (e) {
+              console.warn(`MIME type ${type} not supported`);
+            }
+          }
+          
+          // If all MIME types fail, use the default
+          if (!mediaRecorder) {
+            console.warn('Using default MediaRecorder configuration');
+            mediaRecorder = new MediaRecorder(stream);
+          }
+        }
+        
+        mediaRecorderRef.current = mediaRecorder;
+        chunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            chunksRef.current.push(e.data);
+            processAudioChunk(e.data);
+          }
+        };
+
+        mediaRecorder.start(1000); // Collect data every second
+        setIsListening(true);
+        
+        // Start a new session
+        await startSession();
+      } catch (err) {
+        console.error('Failed to access microphone for AssemblyAI:', err);
+        
+        // Don't show error toast if browser recognition is working
+        if (!speechRecognitionStarted) {
+          toast.error('Failed to access microphone. Make sure permissions are granted.');
+          // We couldn't start either method, so don't set listening to true
+          return;
+        }
+        // If browser recognition is working, just log the error
+        console.log('Continuing with browser SpeechRecognition only');
+      }
+      
       if (inputRef.current) {
         inputRef.current.focus();
       }
     }
   };
 
-  // Handle click on the search field to activate voice
+  // Handle click on the search field to focus
   const handleSearchFieldClick = () => {
-    if (!isListening) {
-      toggleListening();
-    }
+    // Direct approach: show Aura when clicking the search field
+    setShowAura(true);
   };
 
   return (
@@ -221,7 +417,7 @@ export default function ChatPage() {
               <div className="absolute -bottom-5 -right-5 w-32 h-32 bg-gradient-to-tl from-blue-500 via-indigo-400 to-transparent rounded-full opacity-30 blur-2xl animate-pulse" style={{ animationDelay: '1.5s' }}></div>
               
               {/* Search input container */}
-              <div className="relative flex items-center rounded-2xl p-1 bg-black/40 backdrop-blur-sm focus-within:outline-none focus-within:ring-0 focus-within:shadow-none">
+              <div className="flex items-center h-full bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-2">
                 <div className="flex h-full items-center justify-center px-4">
                   <Search className="h-5 w-5 text-purple-400" />
                 </div>
@@ -244,7 +440,7 @@ export default function ChatPage() {
                 />
                 
                 {/* Voice button wrapper with glow effect */}
-                <div className="relative p-1 mr-1 rounded-full">
+                <div className="relative p-1 ml-1 rounded-full">
                   <div className={`absolute inset-0 rounded-full ${isListening ? 'bg-gradient-to-r from-purple-600 to-pink-500 animate-pulse' : 'bg-transparent'} blur-md transition-all duration-300`}></div>
                   <Button
                     onClick={toggleListening}
@@ -284,6 +480,14 @@ export default function ChatPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            )}
+            
+            {/* Transcript display */}
+            {transcript && (
+              <div className="mt-20 bg-zinc-900/80 backdrop-blur-sm p-4 rounded-lg max-w-md mx-auto">
+                <h2 className="text-lg font-semibold mb-2 text-purple-400">Transcript:</h2>
+                <p className="text-white">{transcript}</p>
               </div>
             )}
           </div>

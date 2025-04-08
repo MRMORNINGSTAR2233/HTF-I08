@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Send, FileUp, ChartBar, ChevronLeft, MoreVertical, Download, Mic, MicOff } from 'lucide-react';
+import { Send, FileUp, ChartBar, ChevronLeft, MoreVertical, Download, Mic, MicOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
 import { Separator } from '../../components/ui/separator';
 import { api, chatEndpoints } from './config';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
+import { DataVisualizer } from '../../components/visualizations/DataVisualizer';
 
 // Message interface (legacy for compatibility with UI components)
 
@@ -478,28 +479,54 @@ export default function ChatDetails() {
                 })()}
               </div>
               
-              {/* Conditional rendering for charts when data is available */}
+              {/* Data Visualization Section */}
               {(() => {
                 // Get data from message.data or message.content.data
                 const messageData = message.data || [];
                 const contentData = (typeof message.content === 'object' && message.content?.data) ? message.content.data : [];
-                const dataLength = messageData.length + (contentData?.length || 0);
+                const allData = [...messageData, ...contentData];
+                const dataLength = allData.length;
                 
                 if (dataLength > 0) {
+                  // State to track if visualization is expanded
+                  const [isExpanded, setIsExpanded] = useState(false);
+                  
                   return (
                     <div className="mt-3 border-t border-purple-900/30 pt-3">
-                      <div className="text-xs text-purple-300 mb-2">Data Visualization</div>
-                      <div className="bg-black/30 p-2 rounded-md">
-                        <div className="text-xs text-gray-400">
-                          {dataLength} data points available for visualization
-                        </div>
-                        <div className="flex items-center justify-center mt-2">
-                          <Button variant="outline" size="sm" className="text-xs flex items-center gap-1">
-                            <ChartBar size={12} />
-                            View Chart
-                          </Button>
-                        </div>
+                      <div className="text-xs text-purple-300 mb-2 flex justify-between items-center">
+                        <span>Data Visualization</span>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-6 w-6 p-0"
+                          onClick={() => setIsExpanded(!isExpanded)}
+                        >
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </Button>
                       </div>
+                      
+                      {!isExpanded ? (
+                        <div className="bg-black/30 p-2 rounded-md">
+                          <div className="text-xs text-gray-400">
+                            {dataLength} data points available for visualization
+                          </div>
+                          <div className="flex items-center justify-center mt-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="text-xs flex items-center gap-1"
+                              onClick={() => setIsExpanded(true)}
+                            >
+                              <ChartBar size={12} />
+                              View Chart
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-2 p-4 bg-black/30 rounded-md">
+                          <DataVisualizer data={allData} />
+                        </div>
+                      )}
                     </div>
                   );
                 }
