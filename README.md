@@ -87,3 +87,87 @@ Example: git commit -m "fix(button): fix submit button not working"
 ---
 
 **For any issues or doubts, reach out to the organizing team.** *Happy hacking!* 💻✨
+
+# Aura - AI Assistant with Voice Wake-Up
+
+Aura is an AI assistant that can be awakened with a voice command and responds with speech synthesis.
+
+## Features
+
+- Voice wake-up command: "Aura, Arise!"
+- Speech synthesis for Aura's responses
+- Beautiful animated UI
+- FastAPI backend for speech recognition
+- React frontend with TypeScript
+
+## Setup and Installation
+
+### Backend Setup
+
+1. Navigate to the backend directory:
+   ```
+   cd backend
+   ```
+
+2. Create a virtual environment:
+   ```
+   python -m venv venv
+   ```
+
+3. Activate the virtual environment:
+   - Windows:
+     ```
+     venv\Scripts\activate
+     ```
+   - macOS/Linux:
+     ```
+     source venv/bin/activate
+     ```
+
+4. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+5. Run the FastAPI server:
+   ```
+   uvicorn main:app --reload
+   ```
+
+### Frontend Setup
+
+1. Navigate to the frontend directory:
+   ```
+   cd frontend
+   ```
+
+2. Install dependencies:
+   ```
+   npm install
+   ```
+
+3. Run the development server:
+   ```
+   npm run dev
+   ```
+
+## Usage
+
+1. Open your browser and navigate to `http://localhost:5173`
+2. Click "Start Listening" to begin voice recognition
+3. Say "Aura, Arise!" to wake up Aura
+4. After Aura responds, you'll be taken to the configuration page
+
+## API Endpoints
+
+- `POST /api/start-session`: Start a new speech recognition session
+- `POST /api/process-audio/{session_id}`: Process an audio chunk
+- `POST /api/stop-session/{session_id}`: Stop a speech recognition session
+- `GET /api/get-results/{session_id}`: Get current results for a session
+
+## Technologies Used
+
+- **Backend**: FastAPI, AssemblyAI, Python
+- **Frontend**: React, TypeScript, Framer Motion, Tailwind CSS
+- **Speech Recognition**: AssemblyAI API
+- **Speech Synthesis**: Web Speech API
