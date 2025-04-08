@@ -3,14 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { Database, FileText, X } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { api, databaseEndpoints, fileUploadEndpoints, chatEndpoints, debugApiUrl } from "./chat/config";
+import { toast } from "react-hot-toast";
+import authService from "../services/authService";
+import axios from "axios";
 
 interface DbConfig {
-  dbType: 'mysql' | 'postgres';
+  dbType: 'mysql' | 'postgresql';
   host: string;
   port: string;
   username: string;
   password: string;
-  database: string;
+  database_name: string;
 }
 
 export default function DataSourceConfig() {
@@ -24,6 +28,7 @@ export default function DataSourceConfig() {
   const [csvFileName, setCsvFileName] = useState('');
   const [configName, setConfigName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // DB form state
   const [dbConfig, setDbConfig] = useState<Partial<DbConfig>>({
@@ -32,7 +37,7 @@ export default function DataSourceConfig() {
     port: '',
     username: '',
     password: '',
-    database: ''
+    database_name: ''
   });
 
   // File upload handlers
@@ -53,91 +58,137 @@ export default function DataSourceConfig() {
     setSelectedDataSource(type);
   };
 
-  // Generate a random chat ID
-  const generateChatId = () => {
-    return Math.random().toString(36).substring(2, 6) + '-' +
-           Math.random().toString(36).substring(2, 6) + '-' +
-           Math.random().toString(36).substring(2, 4);
-  };
-
   // Handler for CSV form submission
-  const handleCsvSubmit = () => {
+  const handleCsvSubmit = async () => {
     if (csvFile && configName) {
-      // Generate a unique chat ID
-      const chatId = generateChatId();
-      
-      // Store config in localStorage (for demo purposes)
-      const dataSource = {
-        type: 'csv',
-        name: configName,
-        details: {
-          filename: csvFileName
+      try {
+        setIsSubmitting(true);
+        
+        // Check if user is authenticated
+        if (!authService.isAuthenticated()) {
+          toast.error("You must be logged in to upload files.");
+          navigate('/login');
+          return;
         }
-      };
-      
-      // Save to local storage
-      const dataSources = JSON.parse(localStorage.getItem('dataSources') || '[]');
-      dataSources.push(dataSource);
-      localStorage.setItem('dataSources', JSON.stringify(dataSources));
-      
-      // Create a new chat with this data source
-      const newChat = {
-        id: chatId,
-        title: configName,
-        dataSourceName: configName,
-        createdAt: new Date().toISOString()
-      };
-      
-      // Save to recent chats
-      const recentChats = JSON.parse(localStorage.getItem('recentChats') || '[]');
-      recentChats.unshift(newChat);
-      localStorage.setItem('recentChats', JSON.stringify(recentChats));
-      
-      // Navigate to the specific chat details page
-      navigate(`/chat/${chatId}`);
+        
+        // Get username directly with the safer method
+        const username = authService.getUsername();
+        if (!username) {
+          toast.error("Unable to retrieve username. Please log in again.");
+          authService.logout(); // Clear potentially corrupted auth data
+          navigate('/login');
+          return;
+        }
+        
+        // 2. Upload the file to R2 storage via the backend
+        const formData = new FormData();
+        formData.append('files', csvFile);
+        
+        // Log for debugging - remove in production
+        console.log("Uploading file for user:", username);
+        
+        // Directly use the upload endpoint to avoid path duplication
+        const uploadUrl = fileUploadEndpoints.upload(username);
+        console.log("Using upload URL:", uploadUrl);
+        console.log("Full request URL:", debugApiUrl(uploadUrl));
+        
+        const uploadResponse = await api.post(
+          uploadUrl,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          }
+        );
+        
+        if (!uploadResponse.data || !uploadResponse.data.uploaded_files) {
+          throw new Error("File upload failed");
+        }
+        
+        const uploadedFile = uploadResponse.data.uploaded_files[0];
+        
+        // 3. Create a database config entry for this file
+        const dbConfigResponse = await api.post(databaseEndpoints.createDatabaseConfig, {
+          name: configName,
+          db_type: 'csv',
+          file_path: uploadedFile.stored_name
+        });
+        
+        const newDbConfig = dbConfigResponse.data;
+        
+        // 4. Create a new chat with this data source
+        const chatResponse = await api.post(chatEndpoints.createChat, {
+          name: configName,
+          config_id: newDbConfig.id,
+          config_type: 'csv'
+        });
+        
+        const newChat = chatResponse.data;
+        
+        // 5. Navigate to the new chat
+        navigate(`/chat/${newChat.id}`);
+        
+      } catch (error) {
+        console.error("Error submitting CSV:", error);
+        // Check specifically for JSON parsing errors which indicate corrupt user data
+        if (error instanceof SyntaxError && error.message.includes("JSON")) {
+          toast.error("User session data is corrupted. Please log in again.");
+          authService.logout();
+          navigate('/login');
+        } else {
+          toast.error("Failed to upload file. Please try again.");
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
   // Handler for database form submission
-  const handleDbSubmit = () => {
+  const handleDbSubmit = async () => {
     if (configName && 
         dbConfig.dbType && 
         dbConfig.host && 
         dbConfig.port && 
         dbConfig.username && 
-        dbConfig.password && 
-        dbConfig.database) {
+        // Password can be empty, so don't check for it
+        dbConfig.database_name) {
       
-      // Generate a unique chat ID
-      const chatId = generateChatId();
-      
-      // Store config in localStorage (for demo purposes)
-      const dataSource = {
-        type: 'database',
-        name: configName,
-        details: dbConfig
-      };
-      
-      // Save to local storage
-      const dataSources = JSON.parse(localStorage.getItem('dataSources') || '[]');
-      dataSources.push(dataSource);
-      localStorage.setItem('dataSources', JSON.stringify(dataSources));
-      
-      // Create a new chat with this data source
-      const newChat = {
-        id: chatId,
-        title: configName,
-        dataSourceName: configName,
-        createdAt: new Date().toISOString()
-      };
-      
-      // Save to recent chats
-      const recentChats = JSON.parse(localStorage.getItem('recentChats') || '[]');
-      recentChats.unshift(newChat);
-      localStorage.setItem('recentChats', JSON.stringify(recentChats));
-      
-      // Navigate to the specific chat details page
-      navigate(`/chat/${chatId}`);
+      try {
+        setIsSubmitting(true);
+        
+        // 1. Create a database config entry
+        const dbConfigResponse = await api.post(databaseEndpoints.createDatabaseConfig, {
+          name: configName,
+          db_type: dbConfig.dbType,
+          host: dbConfig.host,
+          port: parseInt(dbConfig.port),
+          username: dbConfig.username,
+          password: dbConfig.password || "", // Send empty string if password is not provided
+          database_name: dbConfig.database_name
+        });
+        
+        const newDbConfig = dbConfigResponse.data;
+        
+        // 2. Create a new chat with this data source
+        const chatResponse = await api.post(chatEndpoints.createChat, {
+          name: configName,
+          config_id: newDbConfig.id,
+          config_type: dbConfig.dbType
+        });
+        
+        const newChat = chatResponse.data;
+        
+        // 3. Navigate to the new chat
+        navigate(`/chat/${newChat.id}`);
+        
+      } catch (error) {
+        console.error("Error creating database config:", error);
+        toast.error("Failed to create database configuration. Please try again.");
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -264,10 +315,10 @@ export default function DataSourceConfig() {
                   </button>
                   <button
                     onClick={handleCsvSubmit}
-                    disabled={!csvFileName || !configName}
-                    className={`${buttonPrimary} ${(!csvFileName || !configName) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!csvFileName || !configName || isSubmitting}
+                    className={`${buttonPrimary} ${(!csvFileName || !configName || isSubmitting) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    Create Chat
+                    {isSubmitting ? 'Creating...' : 'Create Chat'}
                   </button>
                 </div>
               </div>
@@ -307,11 +358,11 @@ export default function DataSourceConfig() {
                   <select
                     id="db-type"
                     value={dbConfig.dbType}
-                    onChange={(e) => setDbConfig({...dbConfig, dbType: e.target.value as 'mysql' | 'postgres'})}
+                    onChange={(e) => setDbConfig({...dbConfig, dbType: e.target.value as 'mysql' | 'postgresql'})}
                     className={inputClasses}
                   >
                     <option value="mysql">MySQL</option>
-                    <option value="postgres">PostgreSQL</option>
+                    <option value="postgresql">PostgreSQL</option>
                   </select>
                 </div>
                 
@@ -361,7 +412,7 @@ export default function DataSourceConfig() {
                 
                 <div>
                   <label htmlFor="db-password" className="block text-sm font-medium text-zinc-300 mb-2">
-                    Password
+                    Password (optional)
                   </label>
                   <input 
                     id="db-password"
@@ -369,21 +420,21 @@ export default function DataSourceConfig() {
                     value={dbConfig.password}
                     onChange={(e) => setDbConfig({...dbConfig, password: e.target.value})}
                     className={inputClasses}
-                    placeholder="••••••••"
+                    placeholder="Leave empty if no password"
                   />
                 </div>
                 
                 <div>
-                  <label htmlFor="db-name" className="block text-sm font-medium text-zinc-300 mb-2">
+                  <label htmlFor="db-database" className="block text-sm font-medium text-zinc-300 mb-2">
                     Database Name
                   </label>
                   <input 
-                    id="db-name"
+                    id="db-database"
                     type="text"
-                    value={dbConfig.database}
-                    onChange={(e) => setDbConfig({...dbConfig, database: e.target.value})}
+                    value={dbConfig.database_name}
+                    onChange={(e) => setDbConfig({...dbConfig, database_name: e.target.value})}
                     className={inputClasses}
-                    placeholder="mydatabase"
+                    placeholder="my_database"
                   />
                 </div>
                 
@@ -396,10 +447,10 @@ export default function DataSourceConfig() {
                   </button>
                   <button
                     onClick={handleDbSubmit}
-                    disabled={!configName || !dbConfig.host || !dbConfig.port || !dbConfig.username || !dbConfig.password || !dbConfig.database}
-                    className={`${buttonPrimary} ${(!configName || !dbConfig.host || !dbConfig.port || !dbConfig.username || !dbConfig.password || !dbConfig.database) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!configName || !dbConfig.host || !dbConfig.port || !dbConfig.username || !dbConfig.database_name || isSubmitting}
+                    className={`${buttonPrimary} ${(!configName || !dbConfig.host || !dbConfig.port || !dbConfig.username || !dbConfig.database_name || isSubmitting) ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    Connect & Create Chat
+                    {isSubmitting ? 'Creating...' : 'Create Chat'}
                   </button>
                 </div>
               </div>

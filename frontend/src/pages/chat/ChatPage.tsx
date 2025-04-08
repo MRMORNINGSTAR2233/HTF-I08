@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Search } from "lucide-react";
+import { Mic, MicOff, Search, PlusCircle, LayoutDashboard, MessageCircle } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { useNavigate } from 'react-router-dom';
+import { api, chatEndpoints } from './config';
+import { toast } from 'react-hot-toast';
 
 // Declare SpeechRecognition type to avoid Typescript errors
 declare global {
@@ -13,7 +16,16 @@ declare global {
   }
 }
 
-export default function ChatHomePage() {
+// Define ChatItem interface
+interface ChatItem {
+  id: number;
+  title: string;
+  dataSourceName: string;
+  createdAt: string;
+}
+
+export default function ChatPage() {
+  const navigate = useNavigate();
   const [isListening, setIsListening] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [placeholder, setPlaceholder] = useState(
@@ -21,6 +33,8 @@ export default function ChatHomePage() {
   );
   const recognitionRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [recentChats, setRecentChats] = useState<ChatItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (
@@ -53,6 +67,33 @@ export default function ChatHomePage() {
         recognitionRef.current.stop();
       }
     };
+  }, []);
+
+  useEffect(() => {
+    // Fetch chats from the API
+    const fetchChats = async () => {
+      try {
+        setIsLoading(true);
+        const response = await api.get(chatEndpoints.getChats);
+        
+        // Transform the data to match our UI format
+        const chats = response.data.map((chat: any) => ({
+          id: chat.id,
+          title: chat.name,
+          dataSourceName: chat.name, // Using chat name as datasource name for display
+          createdAt: new Date(chat.created_at).toISOString(),
+        }));
+        
+        setRecentChats(chats);
+      } catch (error) {
+        console.error("Error fetching chats:", error);
+        toast.error("Failed to load chats");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchChats();
   }, []);
 
   const toggleListening = () => {

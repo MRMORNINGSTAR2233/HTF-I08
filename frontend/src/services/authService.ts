@@ -22,7 +22,29 @@ const authService = {
       if (response.data.token || response.data.access_token) {
         const token = response.data.token || response.data.access_token;
         localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+        
+        // Ensure we have user data to store
+        if (response.data.user) {
+          localStorage.setItem('user', JSON.stringify(response.data.user));
+        } else {
+          // If user data is not in the response, create a basic user object with the username
+          const basicUserData = { username: username };
+          localStorage.setItem('user', JSON.stringify(basicUserData));
+        }
+        
+        // Double-check that user data was properly set
+        try {
+          const storedUser = localStorage.getItem('user');
+          if (!storedUser) {
+            throw new Error('User data not saved');
+          }
+          // Verify we can parse it
+          JSON.parse(storedUser);
+        } catch (err) {
+          console.error('Error storing user data:', err);
+          // Set a fallback if there's an issue
+          localStorage.setItem('user', JSON.stringify({ username: username }));
+        }
       }
       
       return response.data;
@@ -54,8 +76,25 @@ const authService = {
   },
 
   getUser() {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+    try {
+      const user = localStorage.getItem('user');
+      if (!user) return null;
+      
+      // Safely parse the JSON
+      const userData = JSON.parse(user);
+      return userData;
+    } catch (error) {
+      console.error('Error parsing user data from localStorage:', error);
+      // Clear the corrupted data
+      localStorage.removeItem('user');
+      return null;
+    }
+  },
+
+  // Get just the username in a safe way
+  getUsername() {
+    const user = this.getUser();
+    return user?.username || null;
   },
 
   isAuthenticated() {

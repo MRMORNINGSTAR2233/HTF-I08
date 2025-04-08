@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
+import { Toaster } from 'react-hot-toast';
 import './index.css';
 import authService from './services/authService';
 
@@ -65,27 +66,37 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        
-        {/* Auth routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        
-        {/* Protected Chat routes */}
-        <Route element={<ProtectedRoute />}>
-          <Route path="/chat" element={<ChatLayout />}>
-            <Route index element={<ChatPage />} />
-            <Route path="config" element={<DataSourceConfig />} />
-            <Route path=":chatId" element={<ChatDetails />} />
+    <div className="h-screen flex flex-col">
+      <Toaster position="top-right" toastOptions={{
+        style: {
+          background: '#333',
+          color: '#fff',
+          borderRadius: '8px',
+          border: '1px solid rgba(139, 92, 246, 0.3)',
+        },
+      }} />
+      <Router>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          
+          {/* Auth routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          
+          {/* Protected Chat routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/chat" element={<ChatLayout />}>
+              <Route index element={<ChatPage />} />
+              <Route path="config" element={<DataSourceConfig />} />
+              <Route path=":chatId" element={<ChatDetails />} />
+            </Route>
           </Route>
-        </Route>
 
-        {/* Fallback route */}
-        <Route path="*" element={<LandingPage />} />
-      </Routes>
-    </Router>
+          {/* Fallback route */}
+          <Route path="*" element={<LandingPage />} />
+        </Routes>
+      </Router>
+    </div>
   );
 }
 
