@@ -10,6 +10,7 @@ class Message(BaseModel):
 class ChatCreate(BaseModel):
     name: str
     config_id: int
+    config_type: Optional[str] = "DATABASE"
 
 class ChatUpdate(BaseModel):
     name: Optional[str] = None

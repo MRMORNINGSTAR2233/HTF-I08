@@ -18,6 +18,7 @@ def create_chat(
         name=chat.name,
         config_id=chat.config_id,
         user_id=current_user.id,
+        config_type=chat.config_type,
         conversation=[]
     )
     db.add(db_chat)
@@ -67,4 +68,15 @@ def list_chats(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    return db.query(Chat).filter(Chat.user_id == current_user.id).all()
+
+@router.post("/user", response_model=List[ChatInDB])
+def get_user_chats(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Get all chats for the current user using POST method.
+    This is an alternative to the GET endpoint for clients that have issues with GET requests.
+    """
     return db.query(Chat).filter(Chat.user_id == current_user.id).all()
