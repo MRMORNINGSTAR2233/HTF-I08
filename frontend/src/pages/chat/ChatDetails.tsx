@@ -9,18 +9,19 @@ import { toast } from 'react-hot-toast';
 import axios from 'axios';
 
 // Message interface (legacy for compatibility with UI components)
-interface LegacyMessage {
-  id: string; 
-  content: string;
-  sender: 'user' | 'bot';
-  timestamp: Date;
-}
 
 // Message interface to match backend schema
 interface ChatMessage {
   role: 'user' | 'system' | 'assistant';
-  content: string;
+  content: {
+    text?: string;
+    thought?: string;
+    query?: string | null;
+    result?: any | null;
+    data?: any[] | null;
+  };
   timestamp: string;
+  data?: any[]; // Optional data field
 }
 
 // Declare SpeechRecognition type to avoid Typescript errors
@@ -139,7 +140,9 @@ export default function ChatDetails() {
             // Initialize with a welcome message if no messages
             setMessages([{
               role: 'system',
-              content: 'Welcome to your new chat! Ask me anything about your data.',
+              content: {
+                text: 'Welcome to your new chat! Ask me anything about your data.'
+              },
               timestamp: new Date().toISOString()
             }]);
           }
@@ -148,44 +151,73 @@ export default function ChatDetails() {
         console.error('Error fetching chat details:', error);
         
         // Check if it's a 404 error (chat doesn't exist)
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
-          // Create a new chat with default values
-          try {
-            console.log("Creating new chat with ID:", chatId);
-            
-            // Create a new chat
-            const createResponse = await api.post(chatEndpoints.createChat, {
-              name: `Chat ${chatId}`,
-              config_id: 1, // Default config ID
-              config_type: "DATABASE" // Default type
-            });
-            
-            if (createResponse.data) {
-              console.log("Chat created successfully:", createResponse.data);
+        if (axios.isAxiosError(error) && error.response) {
+          if (error.response.status === 404) {
+            // Create a new chat with default values
+            try {
+              console.log("Creating new chat with ID:", chatId);
               
-              // Set chat data from response
-              if (createResponse.data.conversation) {
-                setMessages(createResponse.data.conversation);
-              } else {
-                // Initialize with a welcome message
-                setMessages([{
-                  role: 'system',
-                  content: 'Welcome to your new chat! Ask me anything about your data.',
-                  timestamp: new Date().toISOString()
-                }]);
+              // Create a new chat
+              const createResponse = await api.post(chatEndpoints.createChat, {
+                name: `Chat ${chatId}`,
+                config_id: 1, // Default config ID
+                config_type: "DATABASE" // Default type
+              });
+              
+              if (createResponse.data) {
+                console.log("Chat created successfully:", createResponse.data);
+                
+                // Set chat data from response
+                if (createResponse.data.conversation) {
+                  setMessages(createResponse.data.conversation);
+                } else {
+                  // Initialize with a welcome message
+                  setMessages([{
+                    role: 'system',
+                    content: {
+                      text: 'Welcome to your new chat! Ask me anything about your data.'
+                    },
+                    timestamp: new Date().toISOString()
+                  }]);
+                }
+                
+                // Set the title from the response
+                setTitle(createResponse.data.name || `Chat ${chatId}`);
               }
+            } catch (createError) {
+              console.error('Error creating new chat:', createError);
+              toast.error('Failed to create a new chat');
               
-              // Set the title from the response
-              setTitle(createResponse.data.name || `Chat ${chatId}`);
+              // Set default welcome message even on error
+              setMessages([{
+                role: 'system',
+                content: {
+                  text: 'Error loading chat. Please try again later.'
+                },
+                timestamp: new Date().toISOString()
+              }]);
             }
-          } catch (createError) {
-            console.error('Error creating new chat:', createError);
-            toast.error('Failed to create a new chat');
+          } else if (error.response.status === 500) {
+            console.error('Server error when fetching chat:', error);
+            toast.error('Server error. Please try again later.');
             
-            // Set default welcome message even on error
+            // Set default error message for server error
             setMessages([{
               role: 'system',
-              content: 'Error loading chat. Please try again later.',
+              content: {
+                text: 'Error loading chat. Please try again later.'
+              },
+              timestamp: new Date().toISOString()
+            }]);
+          } else {
+            toast.error('Failed to load chat details');
+            
+            // Set default error message
+            setMessages([{
+              role: 'system',
+              content: {
+                text: 'Error loading chat. Please try again later.'
+              },
               timestamp: new Date().toISOString()
             }]);
           }
@@ -195,7 +227,9 @@ export default function ChatDetails() {
           // Set default error message
           setMessages([{
             role: 'system',
-            content: 'Error loading chat. Please try again later.',
+            content: {
+              text: 'Error loading chat. Please try again later.'
+            },
             timestamp: new Date().toISOString()
           }]);
         }
@@ -212,7 +246,9 @@ export default function ChatDetails() {
     
     const userMessage: ChatMessage = {
       role: 'user',
-      content: input,
+      content: {
+        text: input
+      },
       timestamp: new Date().toISOString()
     };
     
@@ -224,39 +260,141 @@ export default function ChatDetails() {
     try {
       console.log("Sending message to chat ID:", chatId);
       
+      // Try a different payload format - the backend might expect just the content string
+      // or it might expect a different structure
+      const payload = {
+        content: input,
+        // Add additional fields that might be required by the backend
+        role: 'user',
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log("Sending payload:", payload);
+      
       // Send message to backend using POST with proper data structure
       const response = await api.post(
         chatEndpoints.addMessage(parseInt(chatId)), 
-        { content: input }
+        payload
       );
       
       console.log("Message sent successfully, response:", response.data);
       
-      // Update the messages with the full conversation from the backend
-      if (response.data && response.data.conversation) {
-        setMessages(response.data.conversation);
+      // Create assistant message from response
+      if (response.data) {
+        // Log exact response structure for debugging
+        console.log("Response thought:", response.data.thought);
+        console.log("Response data:", response.data.data);
+        
+        // Create a content string from the response, handling different response formats
+        let content = '';
+        
+        // Try to extract content from different possible response formats
+        if (response.data.thought) {
+          content = response.data.thought;
+        } else if (response.data.message) {
+          content = response.data.message;
+        } else if (response.data.response) {
+          content = response.data.response;
+        } else if (response.data.content) {
+          content = response.data.content;
+        } else if (typeof response.data === 'string') {
+          content = response.data;
+        } else {
+          // If no recognizable format, use a default message
+          content = 'Received response from server.';
+        }
+        
+        const assistantMessage: ChatMessage = {
+          role: 'assistant',
+          content: {
+            text: content,
+            data: response.data.data || []
+          },
+          timestamp: new Date().toISOString()
+        };
+        
+        console.log("Created assistant message:", assistantMessage);
+        
+        // Add assistant message to the conversation
+        setMessages(prev => [...prev, assistantMessage]);
       } else {
-        console.warn("Message sent but no conversation data returned");
+        console.warn("Message sent but no response data returned");
         toast.error("Message sent but no response received");
       }
     } catch (error) {
       console.error('Error sending message:', error);
       
-      if (axios.isAxiosError(error) && error.response) {
+      // Try an alternative approach if first attempt fails with 500 error
+      if (axios.isAxiosError(error) && error.response && error.response.status === 500) {
+        try {
+          console.log("First attempt failed with 500 error, trying alternative format");
+          
+          // Try with a simpler format as an alternative approach
+          const altPayload = { message: input };
+          console.log("Sending alternative payload:", altPayload);
+          
+          const altResponse = await api.post(
+            chatEndpoints.addMessage(parseInt(chatId)), 
+            altPayload
+          );
+          
+          console.log("Alternative message sent successfully, response:", altResponse.data);
+          
+          // Process the response similar to the main approach
+          if (altResponse.data) {
+            let content = '';
+            if (altResponse.data.thought) {
+              content = altResponse.data.thought;
+            } else if (altResponse.data.message) {
+              content = altResponse.data.message;
+            } else if (typeof altResponse.data === 'string') {
+              content = altResponse.data;
+            } else {
+              content = 'Received response from server.';
+            }
+            
+            const assistantMessage: ChatMessage = {
+              role: 'assistant',
+              content: {
+                text: content,
+                data: altResponse.data.data || []
+              },
+              timestamp: new Date().toISOString()
+            };
+            
+            setMessages(prev => [...prev, assistantMessage]);
+          }
+        } catch (altError) {
+          console.error('Alternative message format also failed:', altError);
+          toast.error('Server error. Please try again later.');
+          
+          // Remove the optimistically added message on error
+          setMessages(prev => prev.filter(msg => 
+            msg.content.text !== userMessage.content.text || 
+            msg.timestamp !== userMessage.timestamp
+          ));
+        }
+      } else if (axios.isAxiosError(error) && error.response) {
         if (error.response.status === 404) {
           toast.error('Chat not found. Please create a new chat.');
         } else {
           toast.error(`Failed to send message: ${error.response.status} ${error.response.statusText}`);
         }
+        
+        // Remove the optimistically added message on error
+        setMessages(prev => prev.filter(msg => 
+          msg.content.text !== userMessage.content.text || 
+          msg.timestamp !== userMessage.timestamp
+        ));
       } else {
         toast.error('Failed to send message: network error');
+        
+        // Remove the optimistically added message on error
+        setMessages(prev => prev.filter(msg => 
+          msg.content.text !== userMessage.content.text || 
+          msg.timestamp !== userMessage.timestamp
+        ));
       }
-      
-      // Remove the optimistically added message on error
-      setMessages(prev => prev.filter(msg => 
-        msg.content !== userMessage.content || 
-        msg.timestamp !== userMessage.timestamp
-      ));
     } finally {
       setIsSending(false);
     }
@@ -325,8 +463,50 @@ export default function ChatDetails() {
                 ? 'bg-indigo-600 text-white' 
                 : 'bg-zinc-800 border border-purple-900/30'
             }`}>
-              <div className="mb-1">{message.content}</div>
-              <div className="text-xs opacity-70 text-right">
+              <div className="mb-1">
+                {(() => {
+                  // Handle different content formats
+                  if (typeof message.content === 'string') {
+                    return message.content;
+                  } else if (message.content?.text) {
+                    return message.content.text;
+                  } else if (message.content?.thought) {
+                    return message.content.thought;
+                  } else {
+                    return JSON.stringify(message.content);
+                  }
+                })()}
+              </div>
+              
+              {/* Conditional rendering for charts when data is available */}
+              {(() => {
+                // Get data from message.data or message.content.data
+                const messageData = message.data || [];
+                const contentData = (typeof message.content === 'object' && message.content?.data) ? message.content.data : [];
+                const dataLength = messageData.length + (contentData?.length || 0);
+                
+                if (dataLength > 0) {
+                  return (
+                    <div className="mt-3 border-t border-purple-900/30 pt-3">
+                      <div className="text-xs text-purple-300 mb-2">Data Visualization</div>
+                      <div className="bg-black/30 p-2 rounded-md">
+                        <div className="text-xs text-gray-400">
+                          {dataLength} data points available for visualization
+                        </div>
+                        <div className="flex items-center justify-center mt-2">
+                          <Button variant="outline" size="sm" className="text-xs flex items-center gap-1">
+                            <ChartBar size={12} />
+                            View Chart
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              
+              <div className="text-xs opacity-70 text-right mt-1">
                 {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
               </div>
             </div>

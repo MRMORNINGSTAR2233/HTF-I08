@@ -5,7 +5,8 @@ import { Mic, MicOff, Search, PlusCircle, LayoutDashboard, MessageCircle } from 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useNavigate } from 'react-router-dom';
-import { api, chatEndpoints } from './config';
+import { api, chatEndpoints, getCachedChats } from './config';
+import configModule from './config';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
 
@@ -48,6 +49,9 @@ export default function ChatPage() {
         config_id: 1, // Default config ID
         config_type: "DATABASE" // Default type
       });
+      
+      // Reset the cache after creating a new chat
+      configModule.resetCache();
       
       // Navigate to the new chat
       if (response.data && response.data.id) {
@@ -120,41 +124,14 @@ export default function ChatPage() {
       try {
         setIsLoading(true);
         
-        let response;
+        // Use the cached API call
+        const { data } = await getCachedChats();
         
-        // Try the primary endpoint first - users/chats
-        try {
-          console.log("Trying primary endpoint:", chatEndpoints.getUserChats);
-          response = await api.get(chatEndpoints.getUserChats);
-        } catch (primaryError) {
-          console.warn('Primary chat endpoint failed, trying fallback 1:', primaryError);
-          
-          // First fallback: /user/chats
-          try {
-            console.log("Trying fallback 1:", chatEndpoints.userChatsAlt1);
-            response = await api.get(chatEndpoints.userChatsAlt1);
-          } catch (fallback1Error) {
-            console.warn('First fallback failed, trying fallback 2:', fallback1Error);
-            
-            // Second fallback: POST to /chats/user
-            try {
-              console.log("Trying fallback 2:", chatEndpoints.userChatsAlt2);
-              response = await api.post(chatEndpoints.userChatsAlt2);
-            } catch (fallback2Error) {
-              console.warn('Second fallback failed, trying final fallback:', fallback2Error);
-              
-              // Final fallback: GET /chats
-              console.log("Trying final fallback:", chatEndpoints.getChats);
-              response = await api.get(chatEndpoints.getChats);
-            }
-          }
-        }
-        
-        console.log("Received chat data:", response?.data);
+        console.log("Received chat data:", data);
         
         // Transform the data to match our UI format
-        if (response && response.data && Array.isArray(response.data)) {
-          const chats = response.data.map((chat: any) => ({
+        if (Array.isArray(data)) {
+          const chats = data.map((chat: any) => ({
             id: chat.id,
             title: chat.name || `Chat ${chat.id}`,
             dataSourceName: chat.config_type || 'Database', // More descriptive
@@ -163,11 +140,11 @@ export default function ChatPage() {
           
           setRecentChats(chats);
         } else {
-          console.warn("Received unexpected data format:", response?.data);
+          console.warn("Received unexpected data format:", data);
           setRecentChats([]);
         }
       } catch (error) {
-        console.error("Error fetching chats after all attempts:", error);
+        console.error("Error fetching chats:", error);
         toast.error("Failed to load chats");
         setRecentChats([]);
       } finally {

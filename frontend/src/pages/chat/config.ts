@@ -105,18 +105,21 @@ export const chatEndpoints = {
   // Get a specific chat (GET)
   getChat: (id: number) => `${API_V1_STR}/chats/${id}`,
   
-  // Get all chats for current user (GET) - correct endpoint via users API
-  getUserChats: `${API_V1_STR}/users/chats`,
+  // Get all chats for current user (GET)
+  getUserChats: `${API_V1_STR}/chats`,
   
-  // Alternative endpoints (might be needed for compatibility)
-  userChatsAlt1: `${API_V1_STR}/user/chats`,
-  userChatsAlt2: `${API_V1_STR}/chats/user`,
+  // Alternative endpoints - using the same correct endpoint for all alternatives
+  userChatsAlt1: `${API_V1_STR}/chats`,
+  userChatsAlt2: `${API_V1_STR}/chats`,
   
   // Legacy endpoint
   getChats: `${API_V1_STR}/chats`,
   
   // Add a message to a chat (POST)
   addMessage: (id: number) => `${API_V1_STR}/chats/${id}/messages`,
+  
+  // Delete a chat (DELETE)
+  deleteChat: `${API_V1_STR}/chats`,
 };
 
 // File upload endpoints
@@ -144,6 +147,40 @@ export const fileUploadConfig = {
   allowedExtensions: ['.csv', '.xlsx', '.xls'],
 };
 
+// Add a cache object to store API responses
+const apiCache = {
+  chats: {
+    data: null,
+    timestamp: 0,
+    expiryMs: 60000 // Cache expires after 1 minute
+  },
+  reset: () => {
+    apiCache.chats.data = null;
+    apiCache.chats.timestamp = 0;
+  }
+};
+
+// Get chats with caching
+export const getCachedChats = async () => {
+  const now = Date.now();
+  
+  // If cache is valid and not expired, return cached data
+  if (apiCache.chats.data && (now - apiCache.chats.timestamp) < apiCache.chats.expiryMs) {
+    console.log("Using cached chat data");
+    return { data: apiCache.chats.data };
+  }
+  
+  // Otherwise make the API call
+  console.log("Fetching fresh chat data from:", chatEndpoints.getUserChats);
+  const response = await api.get(chatEndpoints.getUserChats);
+  
+  // Cache the response
+  apiCache.chats.data = response.data;
+  apiCache.chats.timestamp = now;
+  
+  return response;
+};
+
 export default {
   api,
   databaseEndpoints,
@@ -152,4 +189,6 @@ export default {
   dataPreviewEndpoints,
   r2Config,
   fileUploadConfig,
+  getCachedChats,
+  resetCache: apiCache.reset,
 }; 

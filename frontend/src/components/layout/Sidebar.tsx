@@ -1,6 +1,6 @@
 import { useState, useRef, MouseEvent, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, MessageSquare, Database, FileText, Activity, X, Edit, Check, LogOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, MessageSquare, Database, FileText, Activity, X, Edit, Check, LogOut, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -8,11 +8,12 @@ import { cn } from '../../lib/utils';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import authService from '../../services/authService';
-import { api, chatEndpoints } from '../../pages/chat/config';
+import { api, chatEndpoints, getCachedChats } from '../../pages/chat/config';
+import configModule from '../../pages/chat/config';
 import { toast } from 'react-hot-toast';
 
 interface DataSourceConfig {
-  type: 'csv' | 'database';
+  type: 'csv' | 'postgres' | 'mysql' | 'excel';
   name: string;
   details: CsvConfig | DbConfig;
 }
@@ -68,6 +69,7 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   // Recent chats state
   const [recentChats, setRecentChats] = useState<ChatItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<number | string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,41 +87,14 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       try {
         setIsLoading(true);
         
-        let response;
-        
-        // Try the primary endpoint first - users/chats
-        try {
-          console.log("Trying primary endpoint:", chatEndpoints.getUserChats);
-          response = await api.get(chatEndpoints.getUserChats);
-        } catch (primaryError) {
-          console.warn('Primary chat endpoint failed, trying fallback 1:', primaryError);
-          
-          // First fallback: /user/chats
-          try {
-            console.log("Trying fallback 1:", chatEndpoints.userChatsAlt1);
-            response = await api.get(chatEndpoints.userChatsAlt1);
-          } catch (fallback1Error) {
-            console.warn('First fallback failed, trying fallback 2:', fallback1Error);
-            
-            // Second fallback: POST to /chats/user
-            try {
-              console.log("Trying fallback 2:", chatEndpoints.userChatsAlt2);
-              response = await api.post(chatEndpoints.userChatsAlt2);
-            } catch (fallback2Error) {
-              console.warn('Second fallback failed, trying final fallback:', fallback2Error);
-              
-              // Final fallback: GET /chats
-              console.log("Trying final fallback:", chatEndpoints.getChats);
-              response = await api.get(chatEndpoints.getChats);
-            }
-          }
-        }
+        // Use the cached API call instead of direct API call
+        const { data } = await getCachedChats();
         
         // Transform API data to match UI format
-        if (response && response.data && Array.isArray(response.data)) {
-          console.log("Received chat data:", response.data);
+        if (Array.isArray(data)) {
+          console.log("Received chat data:", data);
           
-          const chats = response.data.map((chat: any) => ({
+          const chats = data.map((chat: any) => ({
             id: chat.id,
             title: chat.name || `Chat ${chat.id}`,
             dataSourceName: chat.config_type || 'Database', // Display config type or default
@@ -128,11 +103,11 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           
           setRecentChats(chats);
         } else {
-          console.warn("Received unexpected data format:", response?.data);
+          console.warn("Received unexpected data format:", data);
           setRecentChats([]);
         }
       } catch (error) {
-        console.error('Error fetching chats after all attempts:', error);
+        console.error('Error fetching chats:', error);
         setRecentChats([]);
       } finally {
         setIsLoading(false);
@@ -194,19 +169,8 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const handleNewChat = async (e: MouseEvent) => {
     e.stopPropagation();
     try {
-      // Create a new chat via API
-      const response = await api.post(chatEndpoints.createChat, {
-        name: "New Chat",
-        config_id: 1, // Default config
-        config_type: "DATABASE" // Default type
-      });
-      
-      if (response.data && response.data.id) {
         // Navigate to the new chat
-        navigate(`/chat/${response.data.id}`);
-      } else {
-        toast.error("Failed to create a new chat");
-      }
+        navigate(`/chat/config`);
     } catch (error) {
       console.error("Error creating new chat:", error);
       toast.error("Failed to create a new chat");
@@ -214,8 +178,8 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   };
 
   // Handler for selecting data source type
-  const handleDataSourceSelect = (type: 'csv' | 'database') => {
-    setSelectedDataSource(type);
+  const handleDataSourceSelect = (type: 'csv' | 'database' | 'excel') => {
+    setSelectedDataSource(type === 'excel' ? 'csv' : type);
   };
 
   // Handler for CSV form submission
@@ -256,7 +220,7 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
         dbConfig.database) {
       
       const newDataSource: DataSourceConfig = {
-        type: 'database',
+        type: 'postgres',
         name: configName,
         details: dbConfig as DbConfig
       };
@@ -283,19 +247,27 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
 
   // Handle editing a data source
   const handleEditSource = (name: string) => {
-    setEditingSource(name);
     const source = dataSources.find(ds => ds.name === name);
-    
     if (source) {
-      setConfigName(source.name);
-      setSelectedDataSource(source.type);
+      setEditingSource(name);
+      setConfigName(name);
       
       if (source.type === 'csv') {
-        const csvDetails = source.details as CsvConfig;
-        setCsvFileName(csvDetails.filename);
-      } else if (source.type === 'database') {
-        const dbDetails = source.details as DbConfig;
-        setDbConfig(dbDetails);
+        const details = source.details as CsvConfig;
+        setCsvFileName(details.filename);
+        setSelectedDataSource('csv');
+      } else {
+        // Handle database source
+        const details = source.details as DbConfig;
+        setDbConfig({
+          dbType: details.dbType,
+          host: details.host,
+          port: details.port,
+          username: details.username,
+          password: details.password,
+          database: details.database
+        });
+        setSelectedDataSource('database');
       }
     }
   };
@@ -316,6 +288,33 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       password: '',
       database: ''
     });
+  };
+
+  // Handler for deleting a chat
+  const handleDeleteChat = async (chatId: number | string, e: MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    try {
+      const token = authService.getToken();
+      
+      await api.delete(`${chatEndpoints.deleteChat}/${chatId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      // Reset the cache after deletion
+      configModule.resetCache();
+      
+      // Remove from state after successful deletion
+      setRecentChats(recentChats.filter(chat => chat.id !== chatId));
+      setShowDeleteConfirmation(null);
+      toast.success("Chat deleted successfully");
+    } catch (error) {
+      console.error("Error deleting chat:", error);
+      toast.error("Failed to delete chat");
+    }
   };
 
   return (
@@ -686,20 +685,68 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                   <div className="text-xs text-center py-2 text-zinc-500">Loading chats...</div>
                 ) : recentChats.length > 0 ? (
                   recentChats.map((chat) => (
-                    <Link
-                      key={chat.id}
-                      to={`/chat/${chat.id}`}
-                      className="flex flex-col gap-1 px-2 py-2 rounded-md hover:bg-zinc-800/70 text-sm transition-colors relative z-10 pointer-events-auto"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center gap-2">
-                        <MessageSquare size={16} className="text-primary-400 shrink-0" />
-                        <span className="truncate text-zinc-200">{chat.title}</span>
-                      </div>
-                      <div className="text-xs text-zinc-500 pl-6">
-                        {chat.dataSourceName}
-                      </div>
-                    </Link>
+                    <div key={chat.id} className="relative">
+                      <Link
+                        to={`/chat/${chat.id}`}
+                        className="flex flex-col gap-1 px-2 py-2 rounded-md hover:bg-zinc-800/70 text-sm transition-colors relative z-10 pointer-events-auto group"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center gap-2">
+                          <MessageSquare size={16} className="text-primary-400 shrink-0" />
+                          <span className="truncate text-zinc-200">{chat.title}</span>
+                          
+                          <div className="ml-auto flex items-center">
+                            <button 
+                              className="h-6 w-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setShowDeleteConfirmation(chat.id);
+                              }}
+                            >
+                              <Trash2 
+                                size={14} 
+                                className="text-red-500 hover:text-red-400 hover:scale-110 hover:rotate-12 transition-all duration-200" 
+                              />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="text-xs text-zinc-500 pl-6">
+                          {chat.dataSourceName}
+                        </div>
+                      </Link>
+                      
+                      {showDeleteConfirmation === chat.id && (
+                        <div 
+                          className="absolute top-0 left-0 right-0 bottom-0 bg-zinc-900/90 rounded-md p-2 flex flex-col items-center justify-center z-20"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <p className="text-xs text-white mb-2">Delete this chat?</p>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              className="bg-red-600 hover:bg-red-700 text-xs py-0 h-7"
+                              onClick={(e) => handleDeleteChat(chat.id, e)}
+                            >
+                              Yes
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700 text-xs py-0 h-7"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setShowDeleteConfirmation(null);
+                              }}
+                            >
+                              No
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))
                 ) : (
                   <div className="text-xs text-center py-2 text-zinc-500">No chats found</div>

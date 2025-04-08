@@ -1,12 +1,9 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Database, FileText, X } from "lucide-react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import { api, databaseEndpoints, fileUploadEndpoints, chatEndpoints, debugApiUrl } from "./chat/config";
 import { toast } from "react-hot-toast";
 import authService from "../services/authService";
-import axios from "axios";
 
 interface DbConfig {
   dbType: 'mysql' | 'postgresql';
@@ -197,7 +194,7 @@ export default function DataSourceConfig() {
     if (selectedDataSource) {
       setSelectedDataSource(null);
     } else {
-      navigate('/');
+      navigate('/chat');
     }
   };
 
