@@ -213,8 +213,8 @@ export default function ChatDetails() {
       
       {/* Shining light effects */}
       <div className="fixed top-10 left-10 w-72 h-72 bg-gradient-to-br from-purple-500 via-violet-400 to-transparent rounded-full opacity-20 blur-3xl animate-pulse pointer-events-none"></div>
-      <div className="fixed bottom-10 right-10 w-96 h-96 bg-gradient-to-tl from-blue-500 via-indigo-400 to-transparent rounded-full opacity-15 blur-3xl animate-pulse pointer-events-none" style={{ animationDelay: '2s' }}></div>
-      <div className="fixed top-1/3 right-1/4 w-48 h-48 bg-gradient-to-tr from-fuchsia-500 via-purple-400 to-transparent rounded-full opacity-10 blur-3xl animate-pulse pointer-events-none" style={{ animationDelay: '3.5s' }}></div>
+      <div className="fixed bottom-10 right-10 w-96 h-96 bg-gradient-to-tl from-blue-500 via-indigo-700 to-transparent rounded-full opacity-10 blur-3xl animate-pulse pointer-events-none" style={{ animationDelay: '2s' }}></div>
+      <div className="fixed top-1/3 right-1/4 w-48 h-48 bg-gradient-to-tr from-fuchsia-500 via-purple-800 to-transparent rounded-full opacity-10 blur-3xl animate-pulse pointer-events-none" style={{ animationDelay: '3.5s' }}></div>
       
       {/* Header */}
       <header className="relative z-10 border-b border-white/5 p-3 backdrop-blur-sm bg-zinc-900/30 flex items-center justify-between">
